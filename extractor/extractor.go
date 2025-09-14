@@ -1,6 +1,9 @@
 package extractor
 
-import "net/url"
+import (
+	"io"
+	"net/url"
+)
 
 type Episode struct {
 	MovieId int
@@ -19,6 +22,7 @@ type Extractor interface {
 	Search(query string) ([]Movie, error)
 	GetEpisodes(m Movie) ([]Episode, error)
 	GetM3UPlaylist(e Episode) ([]byte, error)
+	Download(e Episode) (io.Reader, error)
 }
 
 func mustJoinPath(base string, elem ...string) string {

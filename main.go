@@ -39,26 +39,19 @@ func main() {
 
 	fmt.Println("Select last")
 
-	ep := eps[len(eps)-1]
-
-	p, err := ex.GetM3UPlaylist(ep)
-	if err != nil {
-		panic(err)
-	}
+	ep := eps[len(eps)-3]
 
 	fmt.Println("eps", ep.Title)
 
-	file, err := os.Create("result.m3u8")
-	if err != nil {
-		panic(err)
-	}
-
-	n, err := file.Write(p)
+	file, err := os.Create(ep.Title)
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	fmt.Println(n)
+	err = ex.Download(ep, file)
 
+	if err != nil {
+		panic(err)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const KEY = "dm_thang_suc_vat_get_link_an_dbt"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
@@ -42,14 +43,38 @@ type LinkObj struct {
 
 func NewAniVietSubExtractor(base string) (*AniVietSubExtractor, error) {
 
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		MaxVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: false,
+		// Mimic Chrome's cipher suites
+		CipherSuites: []uint16{
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		},
+	}
+
+	// Create custom transport with TLS config
+	transport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
 
 	client := http.Client{
-		Timeout: 5 * time.Second,
-		Jar:     jar,
+		Timeout:   5 * time.Second,
+		Jar:       jar,
+		Transport: transport,
 	}
 
 	return &AniVietSubExtractor{
@@ -130,6 +155,46 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	}
 
 	return []byte(str), nil
+}
+
+func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
+
+	playlist, err := ex.GetM3UPlaylist(e)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.SplitSeq(string(playlist), "\n")
+
+	for v := range lines {
+		if !strings.HasPrefix(v, "http") {
+			continue
+		}
+
+		req, err := http.NewRequest(http.MethodGet, v, nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("referer", ex.domain)
+		req.Header.Set("user-agent", USER_AGENT)
+		req.Header.Set("Range", "bytes=120-")
+
+		r, err := ex.client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		defer r.Body.Close()
+		_, err = io.Copy(w, r.Body)
+		if err != nil {
+			return err
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return nil
 }
 
 func decryptVideoSource(encryptedData string) ([]byte, error) {
