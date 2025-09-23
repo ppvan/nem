@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Eyevinn/hls-m3u8/m3u8"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -27,8 +28,9 @@ const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
 
 type AniVietSubExtractor struct {
-	domain string
-	client *http.Client
+	domain      string
+	client      *http.Client
+	rateLimiter *time.Ticker
 }
 
 type EncryptedPlaylist struct {
@@ -72,7 +74,7 @@ func NewAniVietSubExtractor(base string) (*AniVietSubExtractor, error) {
 	}
 
 	client := http.Client{
-		Timeout:   5 * time.Second,
+		Timeout:   20 * time.Second,
 		Jar:       jar,
 		Transport: transport,
 	}
@@ -154,7 +156,59 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 		return nil, err
 	}
 
-	return []byte(str), nil
+	buf := strings.NewReader(str)
+
+	media, mType, err := m3u8.DecodeFrom(buf, true)
+	if err != nil || mType != m3u8.MEDIA {
+		return nil, fmt.Errorf("can't parse m3u8 playlist")
+	}
+
+	oldPlaylist := media.(*m3u8.MediaPlaylist)
+
+	proccesedPlaylist, err := m3u8.NewMediaPlaylist(0, oldPlaylist.Count())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, seg := range oldPlaylist.GetAllSegments() {
+		uri := seg.URI
+		proccesedPlaylist.Append(uri, seg.Duration, seg.Title)
+	}
+	proccesedPlaylist.Close()
+
+	buff := proccesedPlaylist.Encode()
+
+	// Modify segments uri?
+	// 1. Use a server as proxy: http://localhost/video1.ts?url="" --> need a server
+	// 2. Resovle the link and add byte range --> need async processing
+
+	return buff.Bytes(), nil
+}
+
+func (ex *AniVietSubExtractor) Resolve(url string, w io.Writer) error {
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("referer", ex.domain)
+	req.Header.Set("user-agent", USER_AGENT)
+	req.Header.Set("Range", "bytes=120-")
+
+	r, err := ex.client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer r.Body.Close()
+	_, err = io.Copy(w, r.Body)
+	if err != nil {
+		return err
+	}
+
+	// time.Sleep(500 * time.Millisecond)
+	return nil
 }
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
@@ -171,6 +225,7 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 			continue
 		}
 
+		// Continue work
 		req, err := http.NewRequest(http.MethodGet, v, nil)
 		if err != nil {
 			return err
@@ -178,7 +233,7 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 
 		req.Header.Set("referer", ex.domain)
 		req.Header.Set("user-agent", USER_AGENT)
-		req.Header.Set("Range", "bytes=120-")
+		// req.Header.Set("Range", "bytes=120-")
 
 		r, err := ex.client.Do(req)
 		if err != nil {
@@ -186,6 +241,12 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 		}
 
 		defer r.Body.Close()
+
+		_, err = io.CopyN(io.Discard, r.Body, 128)
+		if err != nil {
+			return err
+		}
+
 		_, err = io.Copy(w, r.Body)
 		if err != nil {
 			return err
@@ -284,4 +345,24 @@ func extractLargestNumber(text string) int {
 	}
 
 	return max
+}
+
+type PlaylistAssembler struct {
+	client      *http.Client
+	rateLimiter *time.Ticker
+	domain      string
+}
+
+func NewPlaylistAssembler(domain string) *PlaylistAssembler {
+	return &PlaylistAssembler{
+		client:      &http.Client{Timeout: 10 * time.Second},
+		rateLimiter: time.NewTicker(500 * time.Millisecond), // 500ms rate limit
+		domain:      domain,
+	}
+}
+
+// Method 1: Sequential streaming (simplest, lowest memory)
+func (pa *PlaylistAssembler) StreamPlaylistPieces(pieceIDs []string, w io.Writer) error {
+
+	return nil
 }

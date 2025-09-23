@@ -1,57 +1,82 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/ppvan/nem/extractor"
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
 
-	query := "phu thuy tinh lang"
-	ex, err := extractor.NewAniVietSubExtractor("https://animevietsub.cam")
+	// ./nem -s "Title" -e 1 --latest
+	cmd := &cli.Command{
+		Name:        "nem",
+		Description: "download anime from animevietsub",
+		Arguments: []cli.Argument{
+			&cli.StringArg{
+				Name:      "search",
+				UsageText: "the anime title to search",
+			},
+		},
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:  "episode",
+				Value: 0,
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			query := cmd.StringArg("search")
+			episode := cmd.Int("episode")
+
+			return search(query, episode)
+		},
+	}
+
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
+		log.Fatal(err)
+	}
+
+}
+
+func search(query string, episode int) error {
+	ex, err := extractor.NewAniVietSubExtractor("https://animevietsub.show")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("unable to init the extractor: %s", err)
 	}
 
-	movies, err := ex.Search(query)
+	result, err := ex.Search(query)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("unable to search: %s", err)
 	}
 
-	fmt.Println("Result")
-	for _, v := range movies {
-		fmt.Println("movie", v.Id, v.Title, v.Href)
+	if len(result) > 1 {
+		for _, v := range result {
+			fmt.Println(v.Title)
+		}
+		return nil
 	}
 
-	fmt.Println("Select first result")
-	movie := movies[0]
-
-	eps, err := ex.GetEpisodes(movie)
+	movie := result[0]
+	episodes, err := ex.GetEpisodes(movie)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	for _, v := range eps {
-		fmt.Println("title", v.Title, "href", v.Href, "hash", v.Hash)
-	}
+	targetEpisode := episodes[episode]
 
-	fmt.Println("Select last")
-
-	ep := eps[len(eps)-3]
-
-	fmt.Println("eps", ep.Title)
-
-	file, err := os.Create(ep.Title)
+	os.Mkdir(movie.Title, 0700)
+	path := fmt.Sprintf("%v/%v", movie.Title, targetEpisode.Title)
+	file, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("unable to create file: %s", err)
 	}
 	defer file.Close()
 
-	err = ex.Download(ep, file)
+	fmt.Printf("Download %v-%v to %v", movie.Title, targetEpisode.Title, path)
+	return ex.Download(targetEpisode, file)
 
-	if err != nil {
-		panic(err)
-	}
 }
