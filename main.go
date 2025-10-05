@@ -12,27 +12,60 @@ import (
 
 func main() {
 
-	// ./nem -s "Title" -e 1 --latest
 	cmd := &cli.Command{
 		Name:        "nem",
 		Description: "download anime from animevietsub",
-		Arguments: []cli.Argument{
-			&cli.StringArg{
-				Name:      "search",
-				UsageText: "the anime title to search",
-			},
-		},
-		Flags: []cli.Flag{
-			&cli.IntFlag{
-				Name:  "episode",
-				Value: 0,
-			},
-		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			query := cmd.StringArg("search")
-			episode := cmd.Int("episode")
+		Commands: []*cli.Command{
+			{
+				Name: "search",
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:      "title",
+						UsageText: "the title to search",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					query := cmd.StringArg("title")
 
-			return search(query, episode)
+					return search(query)
+				},
+			},
+			{
+				Name: "info",
+				Arguments: []cli.Argument{
+					&cli.IntArg{
+						Name:      "id",
+						UsageText: "the anime id from search command",
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					id := cmd.IntArg("id")
+
+					return info(id)
+				},
+			},
+			{
+				Name: "download",
+				Arguments: []cli.Argument{
+					&cli.IntArg{
+						Name:      "id",
+						UsageText: "the anime id from search command",
+					},
+				},
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:    "episode",
+						Aliases: []string{"e"},
+						Value:   0,
+					},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					id := cmd.IntArg("id")
+					episode := cmd.Int("episode")
+
+					return download(id, episode)
+				},
+			},
 		},
 	}
 
@@ -42,7 +75,7 @@ func main() {
 
 }
 
-func search(query string, episode int) error {
+func search(query string) error {
 	ex, err := extractor.NewAniVietSubExtractor("https://animevietsub.show")
 	if err != nil {
 		return fmt.Errorf("unable to init the extractor: %s", err)
@@ -53,30 +86,49 @@ func search(query string, episode int) error {
 		return fmt.Errorf("unable to search: %s", err)
 	}
 
-	if len(result) > 1 {
-		for _, v := range result {
-			fmt.Println(v.Title)
-		}
-		return nil
+	for _, v := range result {
+		fmt.Printf("%d - %s\n", v.Id, v.Title)
 	}
 
-	movie := result[0]
-	episodes, err := ex.GetEpisodes(movie)
+	return nil
+}
+
+func info(movieId int) error {
+	ex, err := extractor.NewAniVietSubExtractor("https://animevietsub.show")
+	if err != nil {
+		return fmt.Errorf("unable to init the extractor: %s", err)
+	}
+
+	movie, err := ex.Get(movieId)
 	if err != nil {
 		return err
 	}
 
-	targetEpisode := episodes[episode]
+	fmt.Println(movie)
 
-	os.Mkdir(movie.Title, 0700)
-	path := fmt.Sprintf("%v/%v", movie.Title, targetEpisode.Title)
-	file, err := os.Create(path)
+	return nil
+}
+
+func download(movieId int, episodeId int) error {
+	ex, err := extractor.NewAniVietSubExtractor("https://animevietsub.show")
 	if err != nil {
-		return fmt.Errorf("unable to create file: %s", err)
+		return fmt.Errorf("unable to init the extractor: %s", err)
 	}
-	defer file.Close()
 
-	fmt.Printf("Download %v-%v to %v", movie.Title, targetEpisode.Title, path)
-	return ex.Download(targetEpisode, file)
+	movie, err := ex.Get(movieId)
+	if err != nil {
+		return err
+	}
 
+	if episodeId == 0 {
+		episodeId = len(movie.Episodes)
+	}
+
+	if episodeId > len(movie.Episodes) || episodeId <= 0 {
+		return fmt.Errorf("no episode %d, found %s", episodeId, movie.TotalEpisodes)
+	}
+
+	episode := movie.Episodes[episodeId-1]
+
+	return ex.Download(episode, os.Stdout)
 }

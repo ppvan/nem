@@ -28,9 +28,8 @@ const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
 
 type AniVietSubExtractor struct {
-	domain      string
-	client      *http.Client
-	rateLimiter *time.Ticker
+	domain string
+	client *http.Client
 }
 
 type EncryptedPlaylist struct {
@@ -112,6 +111,18 @@ func (ex *AniVietSubExtractor) GetEpisodes(m Movie) ([]Episode, error) {
 	defer r.Body.Close()
 
 	return parseMovieEpisodes(m.Id, r.Body)
+}
+
+func (ex *AniVietSubExtractor) Get(id int) (*Movie, error) {
+	url := mustJoinPath(ex.domain, "phim", fmt.Sprintf("-%d", id), "xem-phim.html")
+
+	r, err := ex.client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Body.Close()
+
+	return parseMovieMetadata(id, r.Body)
 }
 
 func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
@@ -327,6 +338,61 @@ func parseMovieEpisodes(movieId int, r io.Reader) ([]Episode, error) {
 	})
 
 	return episodes, nil
+}
+
+func parseMovieMetadata(movieId int, r io.Reader) (*Movie, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("error loading document: %w", err)
+	}
+
+	title := strings.TrimSpace(doc.Find("article header h1.Title").Text())
+	subtitle := strings.TrimSpace(doc.Find("article header h2.SubTitle").Text())
+	description := strings.TrimSpace(doc.Find("article header .Description").Text())
+	accessTime := strings.TrimSpace(doc.Find("article footer p.Info span.Time").Text())
+
+	// Extract rating
+	var rating float64
+	if scoreStr := doc.Find("#score_current").AttrOr("value", "0"); scoreStr != "" {
+		if r, err := strconv.ParseFloat(scoreStr, 64); err == nil {
+			rating = r
+		}
+	}
+
+	// Extract href from og:url meta tag
+	var href string
+	if metaTag := doc.Find("meta[property='og:url']"); metaTag.Length() > 0 {
+		href, _ = metaTag.Attr("content")
+	}
+
+	// Parse episodes
+	var episodes []Episode
+	selector := ".list-episode li.episode a.btn-episode"
+	doc.Find(selector).Each(func(i int, s *goquery.Selection) {
+		title := s.AttrOr("title", "")
+		href := s.AttrOr("href", "")
+		hash := s.AttrOr("data-hash", "")
+		episode := Episode{
+			MovieId: movieId,
+			Title:   title,
+			Href:    href,
+			Hash:    hash,
+		}
+		episodes = append(episodes, episode)
+	})
+
+	movie := &Movie{
+		Id:            movieId,
+		Title:         title,
+		Subtitle:      subtitle,
+		Description:   description,
+		Rating:        rating,
+		Href:          href,
+		TotalEpisodes: accessTime,
+		Episodes:      episodes,
+	}
+
+	return movie, nil
 }
 
 func extractLargestNumber(text string) int {
