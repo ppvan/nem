@@ -202,10 +202,15 @@ func (ex *AniVietSubExtractor) getM3UPlaylist(e Episode) ([]byte, error) {
 }
 
 func decryptVideoSource(encryptedData string) ([]byte, error) {
+
 	key := sha256.Sum256(KEY)
 	dataBytes, err := base64.StdEncoding.DecodeString(encryptedData)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding base64 data: %v", err)
+	}
+
+	if len(dataBytes) <= 16 {
+		return nil, fmt.Errorf("encrypted data must have at least 16 bytes")
 	}
 
 	iv := dataBytes[:16]
@@ -231,7 +236,7 @@ func extractMovies(r io.Reader) ([]Movie, error) {
 		return nil, err
 	}
 
-	var movies []Movie
+	movies := []Movie{}
 	doc.Find("li:not(.ss-bottom)").Each(func(i int, s *goquery.Selection) {
 		title := s.Find(".ss-title").Text()
 		href := s.Find(".ss-title").AttrOr("href", "")
