@@ -252,26 +252,12 @@ func parseMovieMetadata(movieId int, r io.Reader) (*Movie, error) {
 		return nil, fmt.Errorf("error loading document: %w", err)
 	}
 
-	title := strings.TrimSpace(doc.Find("article header h1.Title").Text())
-	subtitle := strings.TrimSpace(doc.Find("article header h2.SubTitle").Text())
-	description := strings.TrimSpace(doc.Find("article header .Description").Text())
-	accessTime := strings.TrimSpace(doc.Find("article footer p.Info span.Time").Text())
-
-	var rating float64
-	if scoreStr := doc.Find("#score_current").AttrOr("value", "0"); scoreStr != "" {
-		if r, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-			rating = r
-		}
-	}
-
-	var href string
-	if metaTag := doc.Find("meta[property='og:url']"); metaTag.Length() > 0 {
-		href, _ = metaTag.Attr("content")
-	}
+	href := doc.Find("meta[property='og:url']").First().AttrOr("content", "")
 
 	var episodes []Episode
-	selector := ".list-episode li.episode a.btn-episode"
-	doc.Find(selector).Each(func(i int, s *goquery.Selection) {
+	episodeListTag := doc.Find("#list-server").First()
+	selector := "li.episode>a.btn-episode"
+	episodeListTag.Find(selector).Each(func(i int, s *goquery.Selection) {
 		title := s.AttrOr("title", "")
 		href := s.AttrOr("href", "")
 		hash := s.AttrOr("data-hash", "")
@@ -283,6 +269,18 @@ func parseMovieMetadata(movieId int, r io.Reader) (*Movie, error) {
 		}
 		episodes = append(episodes, episode)
 	})
+
+	articleTag := doc.Find("article.TPost")
+	title := strings.TrimSpace(articleTag.Find("h1.Title").Text())
+	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
+	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
+	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
+
+	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
+	var rating float64
+	if r, err := strconv.ParseFloat(scoreStr, 64); err == nil {
+		rating = r / 10
+	}
 
 	movie := &Movie{
 		Id:            movieId,
