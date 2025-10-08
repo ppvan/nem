@@ -10,11 +10,13 @@ import (
 
 func main() {
 	cmd := &cli.Command{
-		Name:        "nem",
-		Description: "download anime from animevietsub",
+		Name:                  "nem",
+		Usage:                 "download anime from animevietsub",
+		EnableShellCompletion: true,
 		Commands: []*cli.Command{
 			{
-				Name: "search",
+				Name:  "search",
+				Usage: "search for anime by title",
 				Arguments: []cli.Argument{
 					&cli.StringArg{
 						Name:      "title",
@@ -28,7 +30,8 @@ func main() {
 				},
 			},
 			{
-				Name: "info",
+				Name:  "info",
+				Usage: "show anime metadata",
 				Arguments: []cli.Argument{
 					&cli.IntArg{
 						Name:      "id",
@@ -42,7 +45,8 @@ func main() {
 				},
 			},
 			{
-				Name: "download",
+				Name:  "download",
+				Usage: "download anime video to stdout",
 				Arguments: []cli.Argument{
 					&cli.IntArg{
 						Name:      "id",
