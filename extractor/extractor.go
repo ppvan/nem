@@ -15,14 +15,14 @@ type Episode struct {
 }
 
 type Movie struct {
-	Id            int
-	Title         string
-	Subtitle      string
-	Description   string
-	Rating        float64
-	Href          string
-	TotalEpisodes string
-	Episodes      []Episode
+	Id            int       `json:"id"`
+	Title         string    `json:"title"`
+	Subtitle      string    `json:"subtitle"`
+	Description   string    `json:"description"`
+	Rating        float64   `json:"rating"`
+	Href          string    `json:"href"`
+	TotalEpisodes string    `json:"total_episodes"`
+	Episodes      []Episode `json:"episodes"`
 }
 
 func (m *Movie) String() string {
@@ -41,9 +41,10 @@ func (m *Movie) String() string {
 
 type Extractor interface {
 	Search(query string) ([]Movie, error)
-	GetEpisodes(m Movie) ([]Episode, error)
 	GetM3UPlaylist(e Episode) ([]byte, error)
-	Download(e Episode) (io.Reader, error)
+	Download(e Episode, w io.Writer) error
+	DownloadSegment(url string, w io.Writer) error
+	GetMovieMetadata(id int) (*Movie, error)
 }
 
 func mustJoinPath(base string, elem ...string) string {

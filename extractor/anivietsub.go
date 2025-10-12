@@ -101,7 +101,7 @@ func (ex *AniVietSubExtractor) Search(query string) ([]Movie, error) {
 	return movies, nil
 }
 
-func (ex *AniVietSubExtractor) Get(id int) (*Movie, error) {
+func (ex *AniVietSubExtractor) GetMovieMetadata(id int) (*Movie, error) {
 	url := mustJoinPath(ex.domain, "phim", fmt.Sprintf("-%d", id), "xem-phim.html")
 
 	r, err := ex.client.Get(url)
@@ -115,7 +115,7 @@ func (ex *AniVietSubExtractor) Get(id int) (*Movie, error) {
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 
-	playlist, err := ex.getM3UPlaylist(e)
+	playlist, err := ex.GetM3UPlaylist(e)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,62 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 	return nil
 }
 
-func (ex *AniVietSubExtractor) getM3UPlaylist(e Episode) ([]byte, error) {
+func (ex *AniVietSubExtractor) DownloadSegment(url string, w io.Writer) error {
+
+	const FAKE_PNG_HEADER_TO_SKIP = 128
+	const RATELIMIT_DELAY = 500 * time.Millisecond
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Referer", ex.domain)
+	req.Header.Set("User-Agent", USER_AGENT)
+	r, err := ex.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+
+	_, err = io.CopyN(io.Discard, r.Body, FAKE_PNG_HEADER_TO_SKIP)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, r.Body)
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(RATELIMIT_DELAY)
+
+	return nil
+}
+
+func (ex *AniVietSubExtractor) Play(e Episode, w io.Writer) error {
+
+	playlist, err := ex.GetM3UPlaylist(e)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(playlist), "\n")
+	for i, v := range lines {
+		if !strings.HasPrefix(v, "http") {
+			continue
+		}
+
+		chunk := base64.StdEncoding.EncodeToString([]byte(v))
+		lines[i] = fmt.Sprintf("chunks/%s.ts", chunk)
+	}
+
+	content := strings.Join(lines, "\n")
+	w.Write([]byte(content))
+
+	return nil
+}
+
+func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	apiUrl := mustJoinPath(ex.domain, PLAYLIST_API)
 
 	payload := url.Values{

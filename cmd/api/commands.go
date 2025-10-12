@@ -9,7 +9,7 @@ import (
 
 const DOMAIN = "https://animevietsub.show"
 
-func searchHandler(query string) error {
+func searchCommand(query string) error {
 	ex, err := extractor.NewAniVietSubExtractor(DOMAIN)
 	if err != nil {
 		return fmt.Errorf("unable to init the extractor: %s", err)
@@ -27,13 +27,13 @@ func searchHandler(query string) error {
 	return nil
 }
 
-func infoHandler(movieId int) error {
+func infoCommand(movieId int) error {
 	ex, err := extractor.NewAniVietSubExtractor(DOMAIN)
 	if err != nil {
 		return fmt.Errorf("unable to init the extractor: %s", err)
 	}
 
-	movie, err := ex.Get(movieId)
+	movie, err := ex.GetMovieMetadata(movieId)
 	if err != nil {
 		return err
 	}
@@ -43,13 +43,13 @@ func infoHandler(movieId int) error {
 	return nil
 }
 
-func downloadHandler(movieId int, episodeId int) error {
+func downloadCommand(movieId int, episodeId int) error {
 	ex, err := extractor.NewAniVietSubExtractor(DOMAIN)
 	if err != nil {
 		return fmt.Errorf("unable to init the extractor: %s", err)
 	}
 
-	movie, err := ex.Get(movieId)
+	movie, err := ex.GetMovieMetadata(movieId)
 	if err != nil {
 		return err
 	}
@@ -65,4 +65,28 @@ func downloadHandler(movieId int, episodeId int) error {
 	episode := movie.Episodes[episodeId-1]
 
 	return ex.Download(episode, os.Stdout)
+}
+
+func playCommand(movieId int, episodeId int) error {
+	ex, err := extractor.NewAniVietSubExtractor(DOMAIN)
+	if err != nil {
+		return fmt.Errorf("unable to init the extractor: %s", err)
+	}
+
+	movie, err := ex.GetMovieMetadata(movieId)
+	if err != nil {
+		return err
+	}
+
+	if episodeId == 0 {
+		episodeId = len(movie.Episodes)
+	}
+
+	if episodeId > len(movie.Episodes) || episodeId <= 0 {
+		return fmt.Errorf("no episode %d, found %s", episodeId, movie.TotalEpisodes)
+	}
+
+	episode := movie.Episodes[episodeId-1]
+
+	return ex.Play(episode, os.Stdout)
 }

@@ -168,7 +168,7 @@ func TestAniVietSubExtractorGet(t *testing.T) {
 			defer server.Close()
 
 			ex, _ := NewAniVietSubExtractor(server.URL)
-			got, err := ex.Get(tt.movieId)
+			got, err := ex.GetMovieMetadata(tt.movieId)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.wantErr)
 				return
