@@ -108,6 +108,7 @@ func (app *application) getSegment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, err)
+		return
 	}
 
 	err = app.Extractor.DownloadSegment(string(content), w)
@@ -115,5 +116,6 @@ func (app *application) getSegment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, err)
+		return
 	}
 }
