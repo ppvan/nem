@@ -1,0 +1,77 @@
+version: '3'
+
+vars:
+  BINARY_NAME: nem.exe
+  CMD_PATH: ./cmd/cli
+  GO: go
+  GOFLAGS: -v
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the binary
+    cmds:
+      - "{{.GO}} build {{.GOFLAGS}} -o {{.BINARY_NAME}} {{.CMD_PATH}}"
+
+  run:
+    desc: Run the application
+    cmds:
+      - "{{.GO}} run {{.CMD_PATH}}"
+
+  test:
+    desc: Run tests
+    cmds:
+      - "{{.GO}} test -v ./..."
+
+  test-cover:
+    desc: Run tests with coverage
+    cmds:
+      - "{{.GO}} test -v -coverprofile=coverage.out ./..."
+      - "{{.GO}} tool cover -html=coverage.out -o coverage.html"
+
+  bench:
+    desc: Run benchmarks
+    cmds:
+      - "{{.GO}} test -bench=. -benchmem ./..."
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -f coverage.out coverage.html
+      - "{{.GO}} clean"
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - "{{.GO}} mod download"
+      - "{{.GO}} mod tidy"
+
+  fmt:
+    desc: Format code
+    cmds:
+      - "{{.GO}} fmt ./..."
+
+  vet:
+    desc: Vet code
+    cmds:
+      - "{{.GO}} vet ./..."
+
+  check:
+    desc: Run formatting and vetting
+    deps:
+      - fmt
+      - vet
+
+  all:
+    desc: Run all tasks
+    deps:
+      - clean
+      - install
+      - check
+      - test
+      - build

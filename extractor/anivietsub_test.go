@@ -53,7 +53,7 @@ func TestAniVietSubExtractorSearch(t *testing.T) {
 		query      string
 		serverResp string
 		statusCode int
-		want       []Movie
+		want       []AnimeDetail
 		wantErr    bool
 	}{
 		{
@@ -64,7 +64,7 @@ func TestAniVietSubExtractorSearch(t *testing.T) {
 				<li><a class="ss-title" href="/phim-123">Movie 1</a></li>
 				<li><a class="ss-title" href="/phim-456">Movie 2</a></li>
 			</ul>`,
-			want: []Movie{
+			want: []AnimeDetail{
 				{Id: 123, Title: "Movie 1", Href: "/phim-123"},
 				{Id: 456, Title: "Movie 2", Href: "/phim-456"},
 			},
@@ -75,7 +75,7 @@ func TestAniVietSubExtractorSearch(t *testing.T) {
 			query:      "nonexistent",
 			statusCode: http.StatusOK,
 			serverResp: `<ul></ul>`,
-			want:       []Movie{},
+			want:       []AnimeDetail{},
 			wantErr:    false,
 		},
 		{
@@ -116,7 +116,7 @@ func TestAniVietSubExtractorGet(t *testing.T) {
 		name       string
 		movieId    int
 		serverResp string
-		want       *Movie
+		want       *AnimeDetail
 		wantErr    bool
 	}{
 		{
@@ -143,7 +143,7 @@ func TestAniVietSubExtractorGet(t *testing.T) {
 	</div>
 </body>
 </html>`,
-			want: &Movie{
+			want: &AnimeDetail{
 				Id:            123,
 				Title:         "Test Movie",
 				Subtitle:      "Subtitle",
@@ -168,7 +168,7 @@ func TestAniVietSubExtractorGet(t *testing.T) {
 			defer server.Close()
 
 			ex, _ := NewAniVietSubExtractor(server.URL)
-			got, err := ex.GetMovieMetadata(tt.movieId)
+			got, err := ex.GetAnimeDetails(tt.movieId)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -282,13 +282,13 @@ func TestExtractMovies(t *testing.T) {
 	tests := []struct {
 		name    string
 		html    string
-		want    []Movie
+		want    []AnimeDetail
 		wantErr bool
 	}{
 		{
 			name: "extract multiple movies",
 			html: multipleMoviesHTML,
-			want: []Movie{
+			want: []AnimeDetail{
 				{Id: 5260, Title: "Bakuage Sentai Boonboomger", Href: "https://animevietsub.show/phim/bakuage-sentai-boonboomger-a5260/"},
 				{Id: 5408, Title: "Hành Trình Cô Độc Nơi Dị Giới", Href: "https://animevietsub.show/phim/hitoribocchi-no-isekai-kouryaku-a5408/"},
 				{Id: 5210, Title: "Công Tước Chết Chóc Và Cô Hầu Gái Của Cậu Mùa 3", Href: "https://animevietsub.show/phim/shinigami-bocchan-to-kuro-maid-3rd-season-a5210/"},
@@ -301,7 +301,7 @@ func TestExtractMovies(t *testing.T) {
 		{
 			name:    "no movies",
 			html:    `<ul></ul>`,
-			want:    []Movie{},
+			want:    []AnimeDetail{},
 			wantErr: false,
 		},
 	}

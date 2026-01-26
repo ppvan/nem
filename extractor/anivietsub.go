@@ -22,6 +22,7 @@ import (
 
 var KEY = []byte{100, 109, 95, 116, 104, 97, 110, 103, 95, 115, 117, 99, 95, 118, 97, 116, 95, 103, 101, 116, 95, 108, 105, 110, 107, 95, 97, 110, 95, 100, 98, 116}
 
+const DOMAIN = "https://animevietsub.vip"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
@@ -77,7 +78,7 @@ func NewAniVietSubExtractor(base string) (*AniVietSubExtractor, error) {
 	}, nil
 }
 
-func (ex *AniVietSubExtractor) Search(query string) ([]Movie, error) {
+func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {
 	api := mustJoinPath(ex.domain, SEARCH_API)
 	body := url.Values{
 		"ajaxSearch": {"1"},
@@ -101,7 +102,7 @@ func (ex *AniVietSubExtractor) Search(query string) ([]Movie, error) {
 	return movies, nil
 }
 
-func (ex *AniVietSubExtractor) GetMovieMetadata(id int) (*Movie, error) {
+func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	url := mustJoinPath(ex.domain, "phim", fmt.Sprintf("-%d", id), "xem-phim.html")
 
 	r, err := ex.client.Get(url)
@@ -285,18 +286,18 @@ func decryptVideoSource(encryptedData string) ([]byte, error) {
 	return io.ReadAll(reader)
 }
 
-func extractMovies(r io.Reader) ([]Movie, error) {
+func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return nil, err
 	}
 
-	movies := []Movie{}
+	movies := []SimpleAnime{}
 	doc.Find("li:not(.ss-bottom)").Each(func(i int, s *goquery.Selection) {
 		title := s.Find(".ss-title").Text()
 		href := s.Find(".ss-title").AttrOr("href", "")
 
-		movies = append(movies, Movie{
+		movies = append(movies, SimpleAnime{
 			Id:    extractLargestNumber(href),
 			Title: title,
 			Href:  href,
@@ -306,7 +307,7 @@ func extractMovies(r io.Reader) ([]Movie, error) {
 	return movies, nil
 }
 
-func parseMovieMetadata(movieId int, r io.Reader) (*Movie, error) {
+func parseMovieMetadata(movieId int, r io.Reader) (*AnimeDetail, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("error loading document: %w", err)
@@ -342,7 +343,7 @@ func parseMovieMetadata(movieId int, r io.Reader) (*Movie, error) {
 		rating = r / 10
 	}
 
-	movie := &Movie{
+	movie := &AnimeDetail{
 		Id:            movieId,
 		Title:         title,
 		Subtitle:      subtitle,

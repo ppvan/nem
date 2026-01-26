@@ -6,5 +6,6 @@ require github.com/PuerkitoBio/goquery v1.10.3
 
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
+	github.com/urfave/cli/v3 v3.6.2
 	golang.org/x/net v0.39.0 // indirect
 )
