@@ -48,10 +48,10 @@ func (m *AnimeDetail) String() string {
 
 type Extractor interface {
 	Search(query string) ([]SimpleAnime, error)
+	GetAnimeDetails(id int) (*AnimeDetail, error)
 	GetM3UPlaylist(e Episode) ([]byte, error)
 	Download(e Episode, w io.Writer) error
-	DownloadSegment(url string, w io.Writer) error
-	GetAnimeDetails(id int) (*AnimeDetail, error)
+	DownloadSegment(url string) ([]byte, error)
 }
 
 func mustJoinPath(base string, elem ...string) string {

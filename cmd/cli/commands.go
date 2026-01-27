@@ -4,12 +4,34 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/ppvan/nem/extractor"
 	"github.com/urfave/cli/v3"
 )
+
+type ProgressWriter struct {
+	Writer     io.Writer
+	Downloaded int64
+	StartTime  time.Time
+	OnProgress func(downloaded int64, speed float64)
+}
+
+func (pw *ProgressWriter) Write(p []byte) (int, error) {
+	n, err := pw.Writer.Write(p)
+	pw.Downloaded += int64(n)
+
+	if pw.OnProgress != nil {
+		elapsed := time.Since(pw.StartTime).Seconds()
+		speed := float64(pw.Downloaded) / elapsed
+		pw.OnProgress(pw.Downloaded, speed)
+	}
+
+	return n, err
+}
 
 func searchAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
@@ -129,11 +151,15 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 		episode = details.Episodes[episodeNum-1]
 	}
 
-	if cmd.Bool("verbose") {
-		fmt.Printf("Downloading to %s...\n", output)
+	pw := &ProgressWriter{
+		Writer:    file,
+		StartTime: time.Now(),
+		OnProgress: func(downloaded int64, speed float64) {
+			fmt.Printf("\r(%.2f MB/s)", speed/1024/1024)
+		},
 	}
 
-	return ext.Download(episode, file)
+	return ext.Download(episode, pw)
 }
 
 func playlistAction(ctx context.Context, cmd *cli.Command) error {

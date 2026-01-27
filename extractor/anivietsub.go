@@ -158,36 +158,36 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 	return nil
 }
 
-func (ex *AniVietSubExtractor) DownloadSegment(url string, w io.Writer) error {
+func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 
 	const FAKE_PNG_HEADER_TO_SKIP = 128
 	const RATELIMIT_DELAY = 500 * time.Millisecond
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Referer", ex.domain)
 	req.Header.Set("User-Agent", USER_AGENT)
 	r, err := ex.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer r.Body.Close()
 
 	_, err = io.CopyN(io.Discard, r.Body, FAKE_PNG_HEADER_TO_SKIP)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = io.Copy(w, r.Body)
+	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	time.Sleep(RATELIMIT_DELAY)
 
-	return nil
+	return content, nil
 }
 
 func (ex *AniVietSubExtractor) Play(e Episode, w io.Writer) error {
