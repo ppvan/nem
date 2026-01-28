@@ -22,7 +22,6 @@ import (
 
 var KEY = []byte{100, 109, 95, 116, 104, 97, 110, 103, 95, 115, 117, 99, 95, 118, 97, 116, 95, 103, 101, 116, 95, 108, 105, 110, 107, 95, 97, 110, 95, 100, 98, 116}
 
-const DOMAIN = "https://animevietsub.vip"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
@@ -42,7 +41,7 @@ type LinkObj struct {
 	File string `json:"file"`
 }
 
-func NewAniVietSubExtractor(base string) (*AniVietSubExtractor, error) {
+func NewAniVietSubExtractor() (*AniVietSubExtractor, error) {
 
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
@@ -74,7 +73,7 @@ func NewAniVietSubExtractor(base string) (*AniVietSubExtractor, error) {
 
 	return &AniVietSubExtractor{
 		client: &client,
-		domain: base,
+		domain: "https://animevietsub.vip",
 	}, nil
 }
 
@@ -142,12 +141,17 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 		}
 		defer r.Body.Close()
 
-		_, err = io.CopyN(io.Discard, r.Body, FAKE_PNG_HEADER_TO_SKIP)
+		content, err := io.ReadAll(r.Body)
 		if err != nil {
 			return err
 		}
 
-		_, err = io.Copy(w, r.Body)
+		segments, err := extractDataAfterIEND(content)
+		if err != nil {
+			return err
+		}
+
+		_, err = w.Write(segments)
 		if err != nil {
 			return err
 		}

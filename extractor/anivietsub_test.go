@@ -28,7 +28,7 @@ func TestNewAniVietSubExtractor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewAniVietSubExtractor(tt.base)
+			got, err := NewAniVietSubExtractor()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewAniVietSubExtractor() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -98,7 +98,7 @@ func TestAniVietSubExtractorSearch(t *testing.T) {
 			}))
 			defer server.Close()
 
-			ex, _ := NewAniVietSubExtractor(server.URL)
+			ex, _ := NewAniVietSubExtractor()
 			got, err := ex.Search(tt.query)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Search() error = %v, wantErr %v", err, tt.wantErr)
@@ -167,7 +167,7 @@ func TestAniVietSubExtractorGet(t *testing.T) {
 			}))
 			defer server.Close()
 
-			ex, _ := NewAniVietSubExtractor(server.URL)
+			ex, _ := NewAniVietSubExtractor()
 			got, err := ex.GetAnimeDetails(tt.movieId)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Get() error = %v, wantErr %v", err, tt.wantErr)
@@ -402,7 +402,7 @@ func TestAniVietSubExtractorDownload(t *testing.T) {
 			}))
 			defer server.Close()
 
-			ex, _ := NewAniVietSubExtractor(server.URL)
+			ex, _ := NewAniVietSubExtractor()
 			w := &bytes.Buffer{}
 			err := ex.Download(tt.episode, w)
 			if (err != nil) != tt.wantErr {
