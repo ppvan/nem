@@ -12,7 +12,7 @@ import (
 var ext extractor.Extractor
 
 func main() {
-	animevietsubExt, err := extractor.NewAnimeTvExtractor()
+	animevietsubExt, err := extractor.NewAniVietSubExtractor()
 	if err != nil {
 		cli.Exit("failed to init extractor", 1)
 	}

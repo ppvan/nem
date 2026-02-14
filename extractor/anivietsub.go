@@ -73,7 +73,7 @@ func NewAniVietSubExtractor() (*AniVietSubExtractor, error) {
 
 	return &AniVietSubExtractor{
 		client: &client,
-		domain: "https://animevietsub.vip",
+		domain: "https://animevietsub.ee",
 	}, nil
 }
 
@@ -110,7 +110,7 @@ func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	}
 	defer r.Body.Close()
 
-	return parseMovieMetadata(id, r.Body)
+	return parseAnimeVietsubAnimeDetails(id, r.Body)
 }
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
@@ -311,7 +311,7 @@ func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 	return movies, nil
 }
 
-func parseMovieMetadata(movieId int, r io.Reader) (*AnimeDetail, error) {
+func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("error loading document: %w", err)
