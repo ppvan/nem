@@ -71,6 +71,11 @@ func main() {
 				Name:      "download",
 				Usage:     "Download anime episode",
 				ArgsUsage: "[id]",
+				Arguments: []cli.Argument{
+					&cli.IntArg{
+						Name: "id",
+					},
+				},
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "episode",

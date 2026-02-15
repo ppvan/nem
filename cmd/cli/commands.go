@@ -116,14 +116,10 @@ func episodesAction(ctx context.Context, cmd *cli.Command) error {
 
 func downloadAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
-		return fmt.Errorf("missing anime ID")
+		return fmt.Errorf("missing anime id")
 	}
 
-	id, err := strconv.Atoi(cmd.Args().Get(0))
-	if err != nil {
-		return fmt.Errorf("invalid ID: %w", err)
-	}
-
+	id := cmd.IntArg("id")
 	episodeValue := cmd.String("episode")
 	s, e, err := parseRange(episodeValue)
 
