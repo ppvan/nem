@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/ppvan/nem/extractor"
 	"github.com/urfave/cli/v3"
 )
 
 var ext extractor.Extractor
+
+var episodeRangeRegex regexp.Regexp = *regexp.MustCompile("")
 
 func main() {
 	animevietsubExt, err := extractor.NewAniVietSubExtractor()
@@ -69,27 +72,25 @@ func main() {
 				Usage:     "Download anime episode",
 				ArgsUsage: "[id]",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:    "episode",
-						Aliases: []string{"e"},
-						Usage:   "Episode number",
-					},
 					&cli.StringFlag{
-						Name:     "output",
-						Aliases:  []string{"o"},
-						Usage:    "Output file path",
+						Name:     "episode",
+						Aliases:  []string{"e"},
+						Usage:    "Episode number or range (i.e 5, 2-11, 1-12)",
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:  "hash",
-						Usage: "Episode hash for direct download",
+						Name:      "output",
+						Aliases:   []string{"o"},
+						Usage:     "Output directory",
+						TakesFile: true,
+						Required:  true,
 					},
 				},
 				Action: downloadAction,
 			},
 			{
 				Name:      "playlist",
-				Usage:     "Get M3U playlist",
+				Usage:     "Get M3U8 playlist",
 				ArgsUsage: "<id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{
