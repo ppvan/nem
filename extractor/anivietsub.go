@@ -113,7 +113,7 @@ func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	return parseAnimeVietsubAnimeDetails(id, r.Body)
 }
 
-func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
+func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
 
 	playlist, err := ex.GetM3UPlaylist(e)
 	if err != nil {
@@ -121,12 +121,19 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 	}
 	const RATELIMIT_DELAY = 400 * time.Millisecond
 
-	lines := strings.SplitSeq(string(playlist), "\n")
-	for v := range lines {
+	lines := strings.Split(string(playlist), "\n")
+
+	// Filter segment urls
+	links := make([]string, 0)
+	for _, v := range lines {
 		if !strings.HasPrefix(v, "http") {
 			continue
 		}
 
+		links = append(links, v)
+	}
+
+	for i, v := range links {
 		req, err := http.NewRequest(http.MethodGet, v, nil)
 		if err != nil {
 			return err
@@ -153,6 +160,8 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 		if err != nil {
 			return err
 		}
+
+		callback(float64(i+1) / float64(len(links)))
 
 		time.Sleep(RATELIMIT_DELAY)
 	}

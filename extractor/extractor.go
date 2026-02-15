@@ -53,7 +53,7 @@ type Extractor interface {
 	Search(query string) ([]SimpleAnime, error)
 	GetAnimeDetails(id int) (*AnimeDetail, error)
 	GetM3UPlaylist(e Episode) ([]byte, error)
-	Download(e Episode, w io.Writer) error
+	Download(e Episode, w io.Writer, callback func(progress float64)) error
 	DownloadSegment(url string) ([]byte, error)
 }
 

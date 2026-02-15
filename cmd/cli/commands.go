@@ -97,9 +97,9 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func downloadAction(ctx context.Context, cmd *cli.Command) error {
-	if cmd.NArg() < 1 {
-		return fmt.Errorf("missing anime id")
-	}
+	// if cmd.NArg() < 1 {
+	// 	return fmt.Errorf("missing anime id")
+	// }
 
 	id := cmd.IntArg("id")
 	episodeValue := cmd.String("episode")
@@ -144,22 +144,24 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 		}
 		defer file.Close()
 
-		fmt.Printf("start download %s\n", episodeFilePath)
-
+		percent := 0.0
 		pw := &ProgressWriter{
 			Writer:    file,
 			StartTime: time.Now(),
 			OnProgress: func(downloaded int64, speed float64) {
-				fmt.Printf("\r(%.2f MB/s)", speed/1024/1024)
+				fmt.Printf("\r%v %s (%v)", episodeFilePath, color.GreenString("%d%%", int(percent)), color.YellowString("%.2f MB/s", speed/1024/1024))
 			},
 		}
 
-		err = ext.Download(episode, pw)
+		err = ext.Download(episode, pw, func(progress float64) {
+			percent = 100 * progress
+		})
+
 		if err != nil {
-			fmt.Printf("%s download error: %s\n", episodeFilePath, err)
-		} else {
-			fmt.Printf("%s downloaded sucessfully\n", episodeFilePath)
+			return fmt.Errorf("%s download error: %w", episodeFilePath, err)
 		}
+		// Newline for new episode
+		fmt.Println()
 	}
 
 	return nil
