@@ -4,25 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 
-	"github.com/ppvan/nem/extractor"
 	"github.com/urfave/cli/v3"
 )
 
-var ext extractor.Extractor
-
-var episodeRangeRegex regexp.Regexp = *regexp.MustCompile("")
-
 func main() {
-	animevietsubExt, err := extractor.NewAniVietSubExtractor()
-	if err != nil {
-		cli.Exit("failed to init extractor", 1)
-	}
-	ext = animevietsubExt
 
 	cmd := &cli.Command{
-		Name:  "anime",
+		Name:  "nem",
 		Usage: "Anime downloader CLI",
 		Commands: []*cli.Command{
 			{
@@ -115,10 +104,12 @@ func main() {
 			},
 		},
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "verbose",
-				Aliases: []string{"v"},
-				Usage:   "Verbose output",
+			&cli.StringFlag{
+				Name:        "source",
+				Aliases:     []string{"s"},
+				Usage:       "Animevietsub url",
+				DefaultText: "[https://animevietsub.ee]",
+				Value:       "https://animevietsub.ee",
 			},
 		},
 	}

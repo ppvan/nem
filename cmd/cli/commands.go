@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ppvan/nem/extractor"
 	"github.com/urfave/cli/v3"
 )
 
@@ -42,6 +43,12 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("missing search query")
 	}
 
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
+	}
+
 	query := cmd.Args().Get(0)
 	results, err := ext.Search(query)
 	if err != nil {
@@ -70,6 +77,12 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("invalid ID: %w", err)
 	}
 
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
+	}
+
 	details, err := ext.GetAnimeDetails(id)
 	if err != nil {
 		return err
@@ -94,6 +107,12 @@ func episodesAction(ctx context.Context, cmd *cli.Command) error {
 	id, err := strconv.Atoi(cmd.Args().Get(0))
 	if err != nil {
 		return fmt.Errorf("invalid ID: %w", err)
+	}
+
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
 	}
 
 	details, err := ext.GetAnimeDetails(id)
@@ -135,6 +154,12 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 
 	if !info.IsDir() {
 		return fmt.Errorf("directory '%s' is not a directory.", output)
+	}
+
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
 	}
 
 	details, err := ext.GetAnimeDetails(id)
@@ -189,6 +214,12 @@ func playlistAction(ctx context.Context, cmd *cli.Command) error {
 
 	episodeNum := cmd.Int("episode")
 	output := cmd.String("output")
+
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
+	}
 
 	details, err := ext.GetAnimeDetails(id)
 	if err != nil {

@@ -41,7 +41,7 @@ type LinkObj struct {
 	File string `json:"file"`
 }
 
-func NewAniVietSubExtractor() (*AniVietSubExtractor, error) {
+func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
@@ -73,7 +73,7 @@ func NewAniVietSubExtractor() (*AniVietSubExtractor, error) {
 
 	return &AniVietSubExtractor{
 		client: &client,
-		domain: "https://animevietsub.ee",
+		domain: domain,
 	}, nil
 }
 
@@ -119,8 +119,6 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-
-	const FAKE_PNG_HEADER_TO_SKIP = 128
 	const RATELIMIT_DELAY = 500 * time.Millisecond
 
 	lines := strings.SplitSeq(string(playlist), "\n")
@@ -192,29 +190,6 @@ func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 	time.Sleep(RATELIMIT_DELAY)
 
 	return content, nil
-}
-
-func (ex *AniVietSubExtractor) Play(e Episode, w io.Writer) error {
-
-	playlist, err := ex.GetM3UPlaylist(e)
-	if err != nil {
-		return err
-	}
-
-	lines := strings.Split(string(playlist), "\n")
-	for i, v := range lines {
-		if !strings.HasPrefix(v, "http") {
-			continue
-		}
-
-		chunk := base64.StdEncoding.EncodeToString([]byte(v))
-		lines[i] = fmt.Sprintf("chunks/%s.ts", chunk)
-	}
-
-	content := strings.Join(lines, "\n")
-	w.Write([]byte(content))
-
-	return nil
 }
 
 func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
