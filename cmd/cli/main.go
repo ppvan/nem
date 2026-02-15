@@ -60,33 +60,11 @@ func main() {
 				Name:      "details",
 				Usage:     "Get anime details",
 				ArgsUsage: "<id>",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:    "format",
-						Aliases: []string{"f"},
-						Value:   "text",
-						Usage:   "Output format (text|json)",
-					},
-				},
-				Action: detailsAction,
-			},
-			{
-				Name:      "episodes",
-				Usage:     "List episodes for anime",
-				ArgsUsage: "<id>",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:    "format",
-						Aliases: []string{"f"},
-						Value:   "text",
-						Usage:   "Output format (text|json)",
-					},
-				},
-				Action: episodesAction,
+				Action:    detailsAction,
 			},
 			{
 				Name:      "download",
-				Usage:     "Download anime episode",
+				Usage:     "Download anime episodes",
 				ArgsUsage: "[id]",
 				Arguments: []cli.Argument{
 					&cli.IntArg{
@@ -122,10 +100,11 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "output",
-						Aliases:  []string{"o"},
-						Usage:    "Output file path",
-						Required: true,
+						Name:      "output",
+						Aliases:   []string{"o"},
+						Usage:     "Output file path",
+						TakesFile: true,
+						Required:  true,
 					},
 				},
 				Action: playlistAction,

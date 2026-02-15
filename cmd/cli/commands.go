@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/ppvan/nem/extractor"
 	"github.com/urfave/cli/v3"
 )
@@ -56,13 +56,10 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	limit := cmd.Int("limit")
-	count := len(results)
-	if limit < count {
-		count = limit
-	}
+	count := min(limit, len(results))
 
-	for i := 0; i < count; i++ {
-		fmt.Printf("[%d] %s\n    %s\n", results[i].Id, results[i].Title, results[i].Href)
+	for i := range count {
+		fmt.Printf("[%s] %s\n", color.YellowString("%d", results[i].Id), results[i].Title)
 	}
 	return nil
 }
@@ -88,48 +85,14 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	format := cmd.String("format")
-	if format == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(details)
-	}
+	fmt.Printf("%v: %d\n", color.YellowString("Id"), details.Id)
+	fmt.Printf("%v: %s\n", color.YellowString("Href"), details.Href)
+	fmt.Printf("%v: %s\n", color.YellowString("Title"), details.Title)
+	fmt.Printf("%v: %s\n", color.YellowString("Subtitle"), details.Subtitle)
+	fmt.Printf("%v: %s\n", color.YellowString("Description"), details.Description)
+	fmt.Printf("%v: %.1f\n", color.YellowString("Rating"), details.Rating)
+	fmt.Printf("%v: %s\n", color.YellowString("Episodes"), details.TotalEpisodes)
 
-	fmt.Print(details.String())
-	return nil
-}
-
-func episodesAction(ctx context.Context, cmd *cli.Command) error {
-	if cmd.NArg() < 1 {
-		return fmt.Errorf("missing anime ID")
-	}
-
-	id, err := strconv.Atoi(cmd.Args().Get(0))
-	if err != nil {
-		return fmt.Errorf("invalid ID: %w", err)
-	}
-
-	source := cmd.String("source")
-	ext, err := extractor.NewAniVietSubExtractor(source)
-	if err != nil {
-		cli.Exit("failed to init extractor", 1)
-	}
-
-	details, err := ext.GetAnimeDetails(id)
-	if err != nil {
-		return err
-	}
-
-	format := cmd.String("format")
-	if format == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(details.Episodes)
-	}
-
-	for i, ep := range details.Episodes {
-		fmt.Printf("[%d] %s\n", i+1, ep.Title)
-	}
 	return nil
 }
 

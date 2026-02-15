@@ -119,7 +119,7 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	const RATELIMIT_DELAY = 500 * time.Millisecond
+	const RATELIMIT_DELAY = 400 * time.Millisecond
 
 	lines := strings.SplitSeq(string(playlist), "\n")
 	for v := range lines {
