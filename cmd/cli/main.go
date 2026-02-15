@@ -4,15 +4,43 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/urfave/cli/v3"
 )
 
 func main() {
+	var (
+		version  = "unknown"
+		revision = "unknown"
+		dirty    = ""
+	)
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				revision = setting.Value
+			case "vcs.modified":
+				if setting.Value == "true" {
+					dirty = "-dirty"
+				}
+			}
+		}
+	}
+
+	cli.VersionPrinter = func(cmd *cli.Command) {
+		fmt.Printf("version=%s revision=%s%s\n", cmd.Root().Version, revision, dirty)
+	}
 
 	cmd := &cli.Command{
-		Name:  "nem",
-		Usage: "Anime downloader CLI",
+		Name:    "nem",
+		Version: version,
+		Usage:   "Anime downloader CLI",
 		Commands: []*cli.Command{
 			{
 				Name:      "search",
