@@ -4,40 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/ppvan/nem/extractor"
+	"github.com/ppvan/nem/progressbar"
 	"github.com/urfave/cli/v3"
 )
 
 var rangeRegex = regexp.MustCompile(`^(?P<start>\d+)(?:-(?P<end>\d+))?$`)
-
-type ProgressWriter struct {
-	Writer     io.Writer
-	Downloaded int64
-	StartTime  time.Time
-	OnProgress func(downloaded int64, speed float64)
-}
-
-func (pw *ProgressWriter) Write(p []byte) (int, error) {
-	n, err := pw.Writer.Write(p)
-	pw.Downloaded += int64(n)
-
-	if pw.OnProgress != nil {
-		elapsed := time.Since(pw.StartTime).Seconds()
-		speed := float64(pw.Downloaded) / elapsed
-		pw.OnProgress(pw.Downloaded, speed)
-	}
-
-	return n, err
-}
 
 func searchAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
@@ -141,24 +119,23 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 		}
 		defer file.Close()
 
-		percent := 0.0
-		pw := &ProgressWriter{
-			Writer:    file,
-			StartTime: time.Now(),
-			OnProgress: func(downloaded int64, speed float64) {
-				fmt.Printf("\r%v %s (%v)", episodeFilePath, color.GreenString("%d%%", int(math.Ceil(percent))), color.YellowString("%.2f MB/s", speed/1024/1024))
-			},
-		}
-
-		err = ext.Download(episode, pw, func(progress float64) {
-			percent = 100 * progress
+		fmt.Printf("Downloading %s\n", filename)
+		bar := progressbar.New(progressbar.Options{
+			Total:          100,
+			ShowPercentage: true,
 		})
+
+		bar.Start()
+
+		err = ext.Download(episode, file, func(progress float64) {
+			bar.Update(int(progress * 100))
+		})
+
+		bar.Finish()
 
 		if err != nil {
 			return fmt.Errorf("%s download error: %w", episodeFilePath, err)
 		}
-		// Newline for new episode
-		fmt.Println()
 	}
 
 	return nil
