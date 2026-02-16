@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,10 +98,6 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func downloadAction(ctx context.Context, cmd *cli.Command) error {
-	// if cmd.NArg() < 1 {
-	// 	return fmt.Errorf("missing anime id")
-	// }
-
 	id := cmd.IntArg("id")
 	episodeValue := cmd.String("episode")
 	s, e, err := parseRange(episodeValue)
@@ -149,7 +146,7 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 			Writer:    file,
 			StartTime: time.Now(),
 			OnProgress: func(downloaded int64, speed float64) {
-				fmt.Printf("\r%v %s (%v)", episodeFilePath, color.GreenString("%d%%", int(percent)), color.YellowString("%.2f MB/s", speed/1024/1024))
+				fmt.Printf("\r%v %s (%v)", episodeFilePath, color.GreenString("%d%%", int(math.Ceil(percent))), color.YellowString("%.2f MB/s", speed/1024/1024))
 			},
 		}
 

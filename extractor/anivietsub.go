@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -115,95 +114,32 @@ func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 }
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
-
 	playlist, err := ex.GetM3UPlaylist(e)
 	if err != nil {
 		return err
 	}
 
+	segmentURLs := extractSegmentURLs(playlist)
+	if len(segmentURLs) == 0 {
+		return fmt.Errorf("no segment URLs found in playlist")
+	}
+
+	downloader := newAdaptiveDownloader(ex.client, ex.domain)
+	return downloader.downloadSegments(segmentURLs, w, callback)
+}
+
+// extractSegmentURLs parses M3U playlist and returns HTTP(S) URLs
+func extractSegmentURLs(playlist []byte) []string {
 	lines := strings.Split(string(playlist), "\n")
+	urls := make([]string, 0, len(lines)/2) // Approximate capacity
 
-	// Filter segment urls
-	links := make([]string, 0)
-	for _, v := range lines {
-		if strings.HasPrefix(v, "http") {
-			links = append(links, v)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "http") {
+			urls = append(urls, line)
 		}
 	}
-
-	// --- Adaptive parameters (tuned from benchmark)
-	delay := 250 * time.Millisecond
-	minDelay := 120 * time.Millisecond
-	maxDelay := 2 * time.Second
-	successStreak := 0
-
-	for i, v := range links {
-
-	retryLoop:
-		req, err := http.NewRequest(http.MethodGet, v, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Referer", ex.domain)
-		req.Header.Set("User-Agent", USER_AGENT)
-
-		r, err := ex.client.Do(req)
-
-		if err != nil {
-			return err
-		}
-
-		// Handle 429
-		if r.StatusCode == http.StatusTooManyRequests {
-			r.Body.Close()
-
-			// Multiplicative backoff
-			delay = min(time.Duration(float64(delay)*1.8), maxDelay)
-
-			// Jitter (50%–100%)
-			sleep := delay/2 + time.Duration(rand.Float64()*float64(delay/2))
-			time.Sleep(sleep)
-
-			successStreak = 0
-			goto retryLoop
-		}
-
-		if r.StatusCode != http.StatusOK {
-			r.Body.Close()
-			return fmt.Errorf("unexpected status: %d", r.StatusCode)
-		}
-
-		content, err := io.ReadAll(r.Body)
-		r.Body.Close()
-		if err != nil {
-			return err
-		}
-
-		segments, err := extractDataAfterIEND(content)
-		if err != nil {
-			return err
-		}
-
-		_, err = w.Write(segments)
-		if err != nil {
-			return err
-		}
-
-		callback(float64(i+1) / float64(len(links)))
-
-		successStreak++
-		if successStreak >= 5 {
-			delay -= 10 * time.Millisecond
-			if delay < minDelay {
-				delay = minDelay
-			}
-			successStreak = 0
-		}
-
-		time.Sleep(delay)
-	}
-
-	return nil
+	return urls
 }
 
 func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
