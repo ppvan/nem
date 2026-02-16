@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -119,34 +120,61 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(pr
 	if err != nil {
 		return err
 	}
-	const RATELIMIT_DELAY = 400 * time.Millisecond
 
 	lines := strings.Split(string(playlist), "\n")
 
 	// Filter segment urls
 	links := make([]string, 0)
 	for _, v := range lines {
-		if !strings.HasPrefix(v, "http") {
-			continue
+		if strings.HasPrefix(v, "http") {
+			links = append(links, v)
 		}
-
-		links = append(links, v)
 	}
 
+	// --- Adaptive parameters (tuned from benchmark)
+	delay := 250 * time.Millisecond
+	minDelay := 120 * time.Millisecond
+	maxDelay := 2 * time.Second
+	successStreak := 0
+
 	for i, v := range links {
+
+	retryLoop:
 		req, err := http.NewRequest(http.MethodGet, v, nil)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Referer", ex.domain)
 		req.Header.Set("User-Agent", USER_AGENT)
+
 		r, err := ex.client.Do(req)
+
 		if err != nil {
 			return err
 		}
-		defer r.Body.Close()
+
+		// Handle 429
+		if r.StatusCode == http.StatusTooManyRequests {
+			r.Body.Close()
+
+			// Multiplicative backoff
+			delay = min(time.Duration(float64(delay)*1.8), maxDelay)
+
+			// Jitter (50%–100%)
+			sleep := delay/2 + time.Duration(rand.Float64()*float64(delay/2))
+			time.Sleep(sleep)
+
+			successStreak = 0
+			goto retryLoop
+		}
+
+		if r.StatusCode != http.StatusOK {
+			r.Body.Close()
+			return fmt.Errorf("unexpected status: %d", r.StatusCode)
+		}
 
 		content, err := io.ReadAll(r.Body)
+		r.Body.Close()
 		if err != nil {
 			return err
 		}
@@ -163,7 +191,16 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(pr
 
 		callback(float64(i+1) / float64(len(links)))
 
-		time.Sleep(RATELIMIT_DELAY)
+		successStreak++
+		if successStreak >= 5 {
+			delay -= 10 * time.Millisecond
+			if delay < minDelay {
+				delay = minDelay
+			}
+			successStreak = 0
+		}
+
+		time.Sleep(delay)
 	}
 
 	return nil
