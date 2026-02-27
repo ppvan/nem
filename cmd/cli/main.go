@@ -116,7 +116,7 @@ func main() {
 				Aliases:     []string{"s"},
 				Usage:       "Animevietsub url",
 				DefaultText: "[https://animevietsub.be]",
-				Value:       "https://animevietsub.be",
+				Value:       "",
 			},
 		},
 	}

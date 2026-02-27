@@ -71,6 +71,16 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 		Transport: transport,
 	}
 
+	// Auto resolve domain if not provided
+	if domain == "" {
+		resp, err := http.Get("https://bit.ly/animevietsubtv")
+		if err != nil {
+			return nil, fmt.Errorf("can't auto resolve animevietsub domain: %w", err)
+		}
+
+		domain = resp.Request.URL.String()
+	}
+
 	return &AniVietSubExtractor{
 		client: &client,
 		domain: domain,
