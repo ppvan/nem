@@ -1,6 +1,11 @@
 # NEM - Anime Downloader CLI
 
+
 NEM is a powerful CLI application for anime enthusiasts. It supports searching for anime titles, retrieving detailed information about anime series and episodes, and downloading episodes in various formats including M3U8 playlists.
+
+![preview](https://github.com/user-attachments/assets/b6f81215-7d2c-4074-b02a-9c042ffda835)
+
+
 
 ## Usage
 ```sh
