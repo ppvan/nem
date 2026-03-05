@@ -43,6 +43,27 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func trendingAction(ctx context.Context, cmd *cli.Command) error {
+	source := cmd.String("source")
+	ext, err := extractor.NewAniVietSubExtractor(source)
+	if err != nil {
+		cli.Exit("failed to init extractor", 1)
+	}
+
+	results, err := ext.Trending()
+	if err != nil {
+		return err
+	}
+
+	limit := cmd.Int("limit")
+	count := min(limit, len(results))
+
+	for i := range count {
+		fmt.Printf("[%s] %s\n", color.YellowString("%d", results[i].Id), results[i].Title)
+	}
+	return nil
+}
+
 func detailsAction(ctx context.Context, cmd *cli.Command) error {
 	if cmd.NArg() < 1 {
 		return fmt.Errorf("missing anime ID")

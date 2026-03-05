@@ -55,6 +55,7 @@ type Extractor interface {
 	GetM3UPlaylist(e Episode) ([]byte, error)
 	Download(e Episode, w io.Writer, callback func(progress float64)) error
 	DownloadSegment(url string) ([]byte, error)
+	Trending() ([]SimpleAnime, error)
 }
 
 func mustJoinPath(base string, elem ...string) string {

@@ -25,6 +25,7 @@ var KEY = []byte{100, 109, 95, 116, 104, 97, 110, 103, 95, 115, 117, 99, 95, 118
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
+const TRENDING_API = "/bang-xep-hang/season.html"
 
 type AniVietSubExtractor struct {
 	domain string
@@ -121,6 +122,26 @@ func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	defer r.Body.Close()
 
 	return parseAnimeVietsubAnimeDetails(id, r.Body)
+}
+
+func (ex *AniVietSubExtractor) Trending() ([]SimpleAnime, error) {
+	api := mustJoinPath(ex.domain, TRENDING_API)
+	r, err := ex.client.Get(api)
+	if err != nil {
+		return nil, fmt.Errorf("network error: %s", err)
+	}
+	defer r.Body.Close()
+
+	if r.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("api error: %s", r.Status)
+	}
+
+	movies, err := extractTrendingMovies(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %s", err)
+	}
+
+	return movies, nil
 }
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
@@ -273,6 +294,32 @@ func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 			Title: title,
 			Href:  href,
 		})
+	})
+
+	return movies, nil
+}
+
+func extractTrendingMovies(r io.Reader) ([]SimpleAnime, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, err
+	}
+
+	movies := []SimpleAnime{}
+	doc.Find("ul.bxh-movie-phimletv li").Each(func(i int, s *goquery.Selection) {
+		a := s.Find("h3.title-item a")
+		title := a.Text()
+		href := a.AttrOr("href", "")
+		thumbnail := s.Find("a.thumb img").AttrOr("src", "")
+
+		if title != "" && href != "" {
+			movies = append(movies, SimpleAnime{
+				Id:        extractLargestNumber(href),
+				Title:     title,
+				Href:      href,
+				Thumbnail: thumbnail,
+			})
+		}
 	})
 
 	return movies, nil

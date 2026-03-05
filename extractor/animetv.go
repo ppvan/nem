@@ -100,6 +100,10 @@ func (ext *AnimeTvExtractor) Search(query string) ([]SimpleAnime, error) {
 	return animes, nil
 }
 
+func (ext *AnimeTvExtractor) Trending() ([]SimpleAnime, error) {
+	return nil, fmt.Errorf("trending not implemented for animetv")
+}
+
 func (ext *AnimeTvExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	url := mustJoinPath(ext.domain, "thong-tin-phim", fmt.Sprintf("-%d.html", id))
 

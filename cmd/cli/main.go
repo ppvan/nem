@@ -109,6 +109,19 @@ func main() {
 				},
 				Action: playlistAction,
 			},
+			{
+				Name:  "trending",
+				Usage: "Get trending anime of the season",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:    "limit",
+						Aliases: []string{"l"},
+						Value:   20,
+						Usage:   "Max results",
+					},
+				},
+				Action: trendingAction,
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
