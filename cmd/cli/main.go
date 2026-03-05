@@ -116,7 +116,7 @@ func main() {
 					&cli.IntFlag{
 						Name:    "limit",
 						Aliases: []string{"l"},
-						Value:   20,
+						Value:   10,
 						Usage:   "Max results",
 					},
 				},
