@@ -24,20 +24,12 @@ type Envelope struct {
 	UID string `json:"uid"`
 }
 
-// HeaderLike mimics the Fetch API's Headers interface for case-insensitive lookups.
-type HeaderLike interface {
-	Get(name string) string
-}
-
-// ExtractEnvelope extracts the decryption envelope from raw headers (case-insensitive).
-
-func ExtractEnvelope(rawHeaders http.Header) Envelope {
+func extractEnvelope(rawHeaders http.Header) Envelope {
 
 	envelopeHeader := rawHeaders.Get("X-Envelope")
-
 	if envelopeHeader != "" {
 		// Mimics the try/catch behavior; if decoding fails, it falls through to legacy headers
-		if env, err := decodeEnvelopeStructure(envelopeHeader); err == nil {
+		if env, err := parseEnvelope(envelopeHeader); err == nil {
 			return env
 		}
 	}
@@ -64,8 +56,7 @@ func ExtractEnvelope(rawHeaders http.Header) Envelope {
 	}
 }
 
-// DecryptPlaylist processes and decrypts an HLS playlist based on the provided envelope and token.
-func DecryptPlaylist(raw []byte, envelope *Envelope, token string, originHost string) ([]byte, error) {
+func decryptPlaylist(raw []byte, envelope *Envelope, token string, originHost string) ([]byte, error) {
 	rawPlaylist := string(raw)
 
 	var cn, sk, ts, uid string
@@ -414,8 +405,8 @@ func base64UrlToBytes(text string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(normalized)
 }
 
-func decodeEnvelopeStructure(encoded string) (Envelope, error) {
-	bytes, err := base64UrlToBytes(encoded)
+func parseEnvelope(raw string) (Envelope, error) {
+	bytes, err := base64UrlToBytes(raw)
 	if err != nil {
 		return Envelope{}, err
 	}

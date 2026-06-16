@@ -299,39 +299,46 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 		return nil, fmt.Errorf("extract player data: %w", err)
 	}
 
-	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", playerLink.Host, playerData.VideoID, playerData.AVSToken)
+	origin := fmt.Sprint(playerLink.Scheme, "://", playerLink.Host)
+	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", origin, playerData.VideoID, playerData.AVSToken)
 
-	return ex.fetchAndDecryptPlaylist(playlistURL, playerData.AVSToken)
+	body, headers, err := ex.fetchPlaylist(playlistURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch playlist: %w", err)
+	}
+
+	envelope := extractEnvelope(headers)
+	playlist, err := decryptPlaylist(body, &envelope, playerData.AVSToken, origin)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt playlist: %w", err)
+	}
+
+	return playlist, nil
 }
 
-// fetchAndDecryptPlaylist fetches an M3U8 URL, reads the encryption headers,
-// and returns the decrypted playlist body.
-func (ex *AniVietSubExtractor) fetchAndDecryptPlaylist(playlistURL string, token string) ([]byte, error) {
+func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string) ([]byte, http.Header, error) {
 	req, err := http.NewRequest(http.MethodGet, playlistURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	req.Header.Set("Referer", ex.domain)
-	req.Header.Set("User-Agent", USER_AGENT)
+	ex.setCommonHeaders(req)
 
 	resp, err := ex.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch playlist: %w", err)
+		return nil, nil, fmt.Errorf("fetch playlist: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("playlist fetch returned HTTP %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("playlist fetch status: %d", resp.StatusCode)
 	}
-
-	headers := ExtractEnvelope(resp.Header)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read playlist body: %w", err)
+		return nil, nil, fmt.Errorf("failed to read playlist body: %w", err)
 	}
 
-	return DecryptPlaylist(body, &headers, token, req.Host)
+	return body, resp.Header, nil
 }
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
@@ -359,38 +366,6 @@ func extractSegmentURLs(playlist []byte) []string {
 		}
 	}
 	return urls
-}
-
-// DownloadSegment fetches a single .ts segment, skipping the 128-byte fake
-// PNG header prepended by the server to disguise segment files.
-func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
-	const fakePNGHeaderSize = 128
-	const rateLimitDelay = 500 * time.Millisecond
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Referer", ex.domain)
-	req.Header.Set("User-Agent", USER_AGENT)
-
-	r, err := ex.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Body.Close()
-
-	if _, err = io.CopyN(io.Discard, r.Body, fakePNGHeaderSize); err != nil {
-		return nil, err
-	}
-
-	content, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	time.Sleep(rateLimitDelay)
-	return content, nil
 }
 
 func extractMovies(r io.Reader) ([]SimpleAnime, error) {
