@@ -57,8 +57,8 @@ func main() {
 				Action: searchAction,
 			},
 			{
-				Name:      "details",
-				Usage:     "Get anime details",
+				Name:      "info",
+				Usage:     "Get anime details infomation",
 				ArgsUsage: "<id>",
 				Action:    detailsAction,
 			},
@@ -90,7 +90,7 @@ func main() {
 			},
 			{
 				Name:      "playlist",
-				Usage:     "Get M3U8 playlist",
+				Usage:     "Get the M3U8 playlist of the episode",
 				ArgsUsage: "<id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{

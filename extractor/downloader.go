@@ -21,9 +21,9 @@ func newAdaptiveDownloader(client *http.Client, referer string) *adaptiveDownloa
 	return &adaptiveDownloader{
 		client:   client,
 		referer:  referer,
-		delay:    250 * time.Millisecond,
-		minDelay: 120 * time.Millisecond,
-		maxDelay: 2 * time.Second,
+		delay:    100 * time.Millisecond,
+		minDelay: 50 * time.Millisecond,
+		maxDelay: 150 * time.Millisecond,
 	}
 }
 

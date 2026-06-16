@@ -2,19 +2,12 @@ package extractor
 
 import (
 	"bytes"
-	"compress/flate"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +24,7 @@ const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) App
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
 const TRENDING_API = "/bang-xep-hang/season.html"
+const MEDIA_HOST = ""
 
 const (
 	maxRetries = 3
@@ -51,22 +45,6 @@ type EncryptedPlaylist struct {
 
 type LinkObj struct {
 	File string `json:"file"`
-}
-
-// playlistEncryptionHeaders holds the decryption parameters delivered via
-// HTTP response headers alongside the encrypted M3U8 playlist.
-//
-// These map to the JS variables as follows:
-//
-//	X-Digest-Tag       → hmacKeyBase64  (base64url-encoded HMAC-SHA-256 key)
-//	X-Proxy-After      → proxyAfter     (mixed into the HMAC message as "plaintext")
-//	X-Cache-Playlist   → cachePlaylist  (segment counter / index)
-//	X-Request-Playlist → requestPlaylist (URI-decoded extra context)
-type playlistEncryptionHeaders struct {
-	hmacKeyBase64   string // X-Digest-Tag
-	proxyAfter      string // X-Proxy-After
-	cachePlaylist   string // X-Cache-Playlist
-	requestPlaylist string // X-Request-Playlist (already URL-decoded)
 }
 
 func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
@@ -121,7 +99,7 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 		jar:    jar,
 	}
 
-	// Warm up: fetch homepage to get Cloudflare cookies before any real request
+	// Fetch homepage to get Cloudflare cookies before any real request
 	if err := ex.warmUp(); err != nil {
 		return nil, fmt.Errorf("warmup failed: %w", err)
 	}
@@ -129,7 +107,6 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 	return ex, nil
 }
 
-// warmUp fetches the homepage to collect Cloudflare session cookies.
 func (ex *AniVietSubExtractor) warmUp() error {
 	req, err := http.NewRequest(http.MethodGet, ex.domain, nil)
 	if err != nil {
@@ -192,12 +169,13 @@ func (ex *AniVietSubExtractor) doWithRetry(req *http.Request) (*http.Response, e
 	return nil, fmt.Errorf("request failed with 403 after %d retries", maxRetries)
 }
 
-// setCommonHeaders sets browser-like headers to reduce bot detection.
 func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", USER_AGENT)
 	}
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "same-origin")
 	req.Header.Set("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
 	req.Header.Set("Referer", ex.domain)
 }
@@ -281,73 +259,49 @@ func (ex *AniVietSubExtractor) Trending() ([]SimpleAnime, error) {
 	return movies, nil
 }
 
-// GetM3UPlaylist fetches the encrypted playlist for an episode and returns the
-// decrypted M3U8 content.
-//
-// Flow:
-//  1. POST to PLAYLIST_API with the episode hash + movie ID.
-//  2. Decode the JSON response to get the playlist URL (playlist.Link).
-//  3. Fetch that URL; the response headers carry the AES-GCM encryption params.
-//  4. Parse the M3U8 body to extract the joined _t= tokens from segment lines.
-//  5. Decrypt the tokens using the HMAC-derived AES-GCM key.
-//  6. Replace the encrypted segment lines with the decrypted real URLs.
-func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
-
-	req, err := http.NewRequest(http.MethodGet, e.Href, nil)
+func (ex *AniVietSubExtractor) fetchHtml(url string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("setup request: %w", err)
 	}
 	r, err := ex.doWithRetry(req)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("fetch: %w", err)
 	}
 	defer r.Body.Close()
 
-	s, _ := (io.ReadAll(r.Body))
-
-	playerLinkRe := regexp.MustCompile(`PLAYER_DATA.+("link":)"(https[^"]+)"`)
-	match := playerLinkRe.FindSubmatch(s)
-
-	rawPlayerLink := (string(match[2]))
-
-	playerLink := strings.ReplaceAll(rawPlayerLink, `\/`, `/`)
-
-	req, err = http.NewRequest(http.MethodGet, playerLink, nil)
+	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create player page request: %w", err)
+		return "", fmt.Errorf("read body: %w", err)
 	}
-	resp, err := ex.doWithRetry(req)
+
+	return string(content), nil
+}
+
+func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
+	rawEpisode, err := ex.fetchHtml(e.Href)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch player page: %w", err)
+		return nil, fmt.Errorf("fetch episode: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	playerLink, err := extractPlaylistLink(rawEpisode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read player page body: %w", err)
+		return nil, fmt.Errorf("extract playlist link: %w", err)
 	}
 
-	// Extract id and avsToken from the <script> block using regex
-	idRegex := regexp.MustCompile(`const id\s*=\s*"([^"]+)"`)
-	tokenRegex := regexp.MustCompile(`const avsToken\s*=\s*"([^"]+)"`)
-
-	idMatch := idRegex.FindSubmatch(body)
-	if idMatch == nil {
-		return nil, fmt.Errorf("failed to extract id from player page")
-	}
-	tokenMatch := tokenRegex.FindSubmatch(body)
-	if tokenMatch == nil {
-		return nil, fmt.Errorf("failed to extract avsToken from player page")
+	playerHtml, err := ex.fetchHtml(playerLink.String())
+	if err != nil {
+		return nil, fmt.Errorf("fetch player: %w", err)
 	}
 
-	videoID := string(idMatch[1])
-	avsToken := string(tokenMatch[1])
+	playerData, err := extractPlayerData(playerHtml)
+	if err != nil {
+		return nil, fmt.Errorf("extract player data: %w", err)
+	}
 
-	// Build the actual playlist URL
-	// https://storage.googleapiscdn.com/playlist/$id/playlist.m3u8?token=$token
-	playlistURL := fmt.Sprintf("https://storage.googleapiscdn.com/playlist/%s/playlist.m3u8?token=%s", videoID, avsToken)
+	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", playerLink.Host, playerData.VideoID, playerData.AVSToken)
 
-	return ex.fetchAndDecryptPlaylist(playlistURL, avsToken)
+	return ex.fetchAndDecryptPlaylist(playlistURL, playerData.AVSToken)
 }
 
 // fetchAndDecryptPlaylist fetches an M3U8 URL, reads the encryption headers,
@@ -379,194 +333,6 @@ func (ex *AniVietSubExtractor) fetchAndDecryptPlaylist(playlistURL string, token
 
 	return DecryptPlaylist(body, &headers, token, req.Host)
 }
-
-// ─── Encryption header extraction ────────────────────────────────────────────
-
-// extractEncryptionHeaders reads the four custom headers that carry the
-// AES-GCM decryption parameters.
-func extractEncryptionHeaders(h http.Header) playlistEncryptionHeaders {
-	requestPlaylist, _ := url.QueryUnescape(h.Get("X-Request-Playlist"))
-	if requestPlaylist == "" {
-		requestPlaylist = "dest"
-	}
-
-	cachePlaylist := h.Get("X-Cache-Playlist")
-	if cachePlaylist == "" {
-		cachePlaylist = "0"
-	}
-
-	return playlistEncryptionHeaders{
-		hmacKeyBase64:   h.Get("X-Digest-Tag"),
-		proxyAfter:      h.Get("X-Proxy-After"),
-		cachePlaylist:   cachePlaylist,
-		requestPlaylist: requestPlaylist,
-	}
-}
-
-// ─── Playlist decryption ──────────────────────────────────────────────────────
-
-var tokenRegexp = regexp.MustCompile(`[?&]_t=([^&\s]+)`)
-var encryptedSegmentRegexp = regexp.MustCompile(`[?&]_c=[0-9]+`)
-
-// decryptPlaylist inspects an M3U8 body, extracts the encrypted _t= tokens
-// from segment URL lines, decrypts them using the response headers, and
-// returns a valid M3U8 with real segment URLs.
-//
-// If the playlist does not appear to be encrypted (no _c= parameter, or
-// missing required headers), the body is returned unchanged.
-func decryptPlaylist(body []byte, headers playlistEncryptionHeaders) ([]byte, error) {
-	lines := strings.Split(string(body), "\n")
-
-	if !playlistHasEncryptedSegments(lines) ||
-		headers.hmacKeyBase64 == "" ||
-		headers.proxyAfter == "" {
-		return body, nil // not encrypted, pass through
-	}
-
-	commentLines, encryptedTokens := splitPlaylistLines(lines)
-
-	joinedTokens := strings.Join(encryptedTokens, "")
-	if joinedTokens == "" {
-		return body, nil
-	}
-
-	decrypted, err := decryptToken(
-		joinedTokens,
-		headers.hmacKeyBase64,
-		headers.proxyAfter,
-		headers.requestPlaylist,
-		headers.cachePlaylist,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("AES-GCM decryption failed: %w", err)
-	}
-
-	result := strings.Join(commentLines, "\n") + "\n" + decrypted
-	return []byte(result), nil
-}
-
-// playlistHasEncryptedSegments returns true if any segment URL line contains
-// the _c= marker that signals AVS encryption.
-func playlistHasEncryptedSegments(lines []string) bool {
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
-			continue
-		}
-		// First non-comment, non-empty line is a segment URL
-		return encryptedSegmentRegexp.MatchString(line)
-	}
-	return false
-}
-
-// splitPlaylistLines separates a playlist into:
-//   - commentLines: all #EXTINF / #EXT-X-* / blank lines (preserved as-is)
-//   - encryptedTokens: the _t=<value> token from each segment URL line
-func splitPlaylistLines(lines []string) (commentLines []string, encryptedTokens []string) {
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
-			commentLines = append(commentLines, line)
-		} else {
-			m := tokenRegexp.FindStringSubmatch(line)
-			if m != nil {
-				encryptedTokens = append(encryptedTokens, m[1])
-			}
-		}
-	}
-	return
-}
-
-// ─── Core crypto: HMAC-derived AES-256-GCM ───────────────────────────────────
-
-// decryptToken mirrors the JS decryptToken() function exactly.
-//
-// Key derivation:
-//  1. Decode hmacKeyBase64 (base64url) → raw key bytes.
-//  2. HMAC-SHA-256( rawKey, "<requestPlaylist>:<cachePlaylist>:<proxyAfter>" )
-//     → 32-byte AES key material.
-//  3. IV = first 12 bytes of the original raw key bytes.
-//  4. AES-256-GCM decrypt( key=step2, iv=step3, ciphertext=base64url(encryptedToken) ).
-//
-// Parameters mirror the JS function signature 1-to-1:
-//
-//	encryptedToken  – base64url ciphertext  (joined _t= tokens)
-//	hmacKeyBase64   – base64url HMAC key    (X-Digest-Tag header)
-//	proxyAfter      – HMAC message part     (X-Proxy-After header)
-//	requestPlaylist – HMAC message part     (X-Request-Playlist header, URI-decoded)
-//	cachePlaylist   – HMAC message part     (X-Cache-Playlist header)
-func decryptToken(encryptedToken, hmacKeyBase64, proxyAfter, requestPlaylist, cachePlaylist string) (string, error) {
-	// Step 1 – decode the HMAC key from base64url
-	hmacKeyBytes, err := base64.RawURLEncoding.DecodeString(hmacKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode X-Digest-Tag: %w", err)
-	}
-
-	// Step 2 – derive the AES key via HMAC-SHA-256
-	//   message = "<requestPlaylist>:<cachePlaylist>:<proxyAfter>"
-	message := fmt.Sprintf("%s:%s:%s", requestPlaylist, cachePlaylist, proxyAfter)
-	mac := hmac.New(sha256.New, hmacKeyBytes)
-	mac.Write([]byte(message))
-	aesKeyBytes := mac.Sum(nil) // 32 bytes → AES-256
-
-	// Step 3 – IV is the first 12 bytes of the original HMAC key bytes
-	if len(hmacKeyBytes) < 12 {
-		return "", fmt.Errorf("X-Digest-Tag too short: need at least 12 bytes, got %d", len(hmacKeyBytes))
-	}
-	iv := hmacKeyBytes[:12]
-
-	// Step 4 – AES-256-GCM decrypt
-	ciphertext, err := base64.RawURLEncoding.DecodeString(encryptedToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode encrypted token: %w", err)
-	}
-
-	block, err := aes.NewCipher(aesKeyBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to create AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCMWithNonceSize(block, 12)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("AES-GCM open failed: %w", err)
-	}
-
-	return string(plaintext), nil
-}
-
-// ─── Legacy AES-CBC decryption (kept for reference / fallback) ───────────────
-
-// decryptVideoSourceLegacy is the original AES-CBC + deflate decryptor.
-// Kept in case older playlist links still use the CBC scheme.
-func decryptVideoSourceLegacy(encryptedData string) ([]byte, error) {
-	key := sha256.Sum256(KEY)
-	dataBytes, err := base64.StdEncoding.DecodeString(encryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding base64 data: %v", err)
-	}
-	if len(dataBytes) <= 16 {
-		return nil, fmt.Errorf("encrypted data must have at least 16 bytes")
-	}
-
-	iv := dataBytes[:16]
-	ciphertext := dataBytes[16:]
-
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return nil, fmt.Errorf("error creating cipher: %v", err)
-	}
-
-	cipher.NewCBCDecrypter(block, iv).CryptBlocks(ciphertext, ciphertext)
-
-	reader := flate.NewReader(bytes.NewReader(ciphertext))
-	defer reader.Close()
-	return io.ReadAll(reader)
-}
-
-// ─── Download helpers ─────────────────────────────────────────────────────────
 
 func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
 	playlist, err := ex.GetM3UPlaylist(e)
@@ -626,8 +392,6 @@ func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 	time.Sleep(rateLimitDelay)
 	return content, nil
 }
-
-// ─── HTML parsing helpers ─────────────────────────────────────────────────────
 
 func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
