@@ -131,7 +131,7 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	for _, episode := range details.Episodes[s-1 : e] {
-		filename := fmt.Sprint(episode.Title, ".ts")
+		filename := fmt.Sprintf("%s - %s.%s", details.Title, episode.Title, "ts")
 		episodeFilePath := filepath.Join(output, filename)
 
 		file, err := os.Create(episodeFilePath)
