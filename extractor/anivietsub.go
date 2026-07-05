@@ -32,9 +32,10 @@ const (
 )
 
 type AniVietSubExtractor struct {
-	domain string
-	client *http.Client
-	jar    *cookiejar.Jar
+	domain      string
+	client      *http.Client
+	jar         *cookiejar.Jar
+	useAdaptive bool
 }
 
 type EncryptedPlaylist struct {
@@ -346,16 +347,19 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(pr
 	if err != nil {
 		return err
 	}
-
 	segmentURLs := extractSegmentURLs(playlist)
 	if len(segmentURLs) == 0 {
 		return fmt.Errorf("no segment URLs found in playlist")
 	}
 
-	downloader := newAdaptiveDownloader(ex.client, ex.domain)
+	var downloader SegmentDownloader
+	if ex.useAdaptive {
+		downloader = newAdaptiveDownloader(ex.client, ex.domain)
+	} else {
+		downloader = newGreedyDownloader(ex.client, ex.domain)
+	}
 	return downloader.downloadSegments(segmentURLs, w, callback)
 }
-
 func extractSegmentURLs(playlist []byte) []string {
 	lines := strings.Split(string(playlist), "\n")
 	urls := make([]string, 0, len(lines)/2)
