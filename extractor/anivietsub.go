@@ -16,15 +16,10 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// KEY is kept for backward-compat with the old AES-CBC path (decryptVideoSourceLegacy).
-// New playlists use decryptPlaylist() which derives the key from HMAC + response headers.
-var KEY = []byte{100, 109, 95, 116, 104, 97, 110, 103, 95, 115, 117, 99, 95, 118, 97, 116, 95, 103, 101, 116, 95, 108, 105, 110, 107, 95, 97, 110, 95, 100, 98, 116}
-
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
 const TRENDING_API = "/bang-xep-hang/season.html"
-const MEDIA_HOST = ""
 
 const (
 	maxRetries = 3
@@ -284,34 +279,46 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch episode: %w", err)
 	}
-
 	playerLink, err := extractPlaylistLink(rawEpisode)
 	if err != nil {
 		return nil, fmt.Errorf("extract playlist link: %w", err)
 	}
-
 	playerHtml, err := ex.fetchHtml(playerLink.String())
 	if err != nil {
 		return nil, fmt.Errorf("fetch player: %w", err)
 	}
-
 	playerData, err := extractPlayerData(playerHtml)
 	if err != nil {
 		return nil, fmt.Errorf("extract player data: %w", err)
 	}
-
 	origin := fmt.Sprint(playerLink.Scheme, "://", playerLink.Host)
 	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", origin, playerData.VideoID, playerData.AVSToken)
 
-	body, headers, err := ex.fetchPlaylist(playlistURL)
-	if err != nil {
-		return nil, fmt.Errorf("fetch playlist: %w", err)
+	const maxRetries = 5
+	var playlist []byte
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		body, headers, err := ex.fetchPlaylist(playlistURL)
+		if err != nil {
+			lastErr = fmt.Errorf("fetch playlist (attempt %d/%d): %w", attempt, maxRetries, err)
+			continue
+		}
+
+		envelope := extractEnvelope(headers)
+		decrypted, err := decryptPlaylist(body, &envelope, playerData.AVSToken, origin)
+		if err != nil {
+			lastErr = fmt.Errorf("decrypt playlist (attempt %d/%d): %w", attempt, maxRetries, err)
+			continue
+		}
+
+		playlist = decrypted
+		lastErr = nil
+		break
 	}
 
-	envelope := extractEnvelope(headers)
-	playlist, err := decryptPlaylist(body, &envelope, playerData.AVSToken, origin)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt playlist: %w", err)
+	if lastErr != nil {
+		return nil, lastErr
 	}
 
 	return playlist, nil
