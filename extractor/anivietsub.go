@@ -279,46 +279,34 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch episode: %w", err)
 	}
+
 	playerLink, err := extractPlaylistLink(rawEpisode)
 	if err != nil {
 		return nil, fmt.Errorf("extract playlist link: %w", err)
 	}
+
 	playerHtml, err := ex.fetchHtml(playerLink.String())
 	if err != nil {
 		return nil, fmt.Errorf("fetch player: %w", err)
 	}
+
 	playerData, err := extractPlayerData(playerHtml)
 	if err != nil {
 		return nil, fmt.Errorf("extract player data: %w", err)
 	}
+
 	origin := fmt.Sprint(playerLink.Scheme, "://", playerLink.Host)
 	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", origin, playerData.VideoID, playerData.AVSToken)
 
-	const maxRetries = 5
-	var playlist []byte
-	var lastErr error
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		body, headers, err := ex.fetchPlaylist(playlistURL)
-		if err != nil {
-			lastErr = fmt.Errorf("fetch playlist (attempt %d/%d): %w", attempt, maxRetries, err)
-			continue
-		}
-
-		envelope := extractEnvelope(headers)
-		decrypted, err := decryptPlaylist(body, &envelope, playerData.AVSToken, origin)
-		if err != nil {
-			lastErr = fmt.Errorf("decrypt playlist (attempt %d/%d): %w", attempt, maxRetries, err)
-			continue
-		}
-
-		playlist = decrypted
-		lastErr = nil
-		break
+	body, headers, err := ex.fetchPlaylist(playlistURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch playlist: %w", err)
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
+	envelope := extractEnvelope(headers)
+	playlist, err := decryptPlaylist(body, &envelope, playerData.AVSToken, origin)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt playlist: %w", err)
 	}
 
 	return playlist, nil
