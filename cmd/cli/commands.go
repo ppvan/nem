@@ -91,6 +91,7 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("%v: %s\n", color.YellowString("Subtitle"), details.Subtitle)
 	fmt.Printf("%v: %s\n", color.YellowString("Description"), details.Description)
 	fmt.Printf("%v: %.1f\n", color.YellowString("Rating"), details.Rating)
+	fmt.Printf("%v: %s\n", color.YellowString("Views"), details.Views)
 	fmt.Printf("%v: %s\n", color.YellowString("Episodes"), details.TotalEpisodes)
 
 	return nil

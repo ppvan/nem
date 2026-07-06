@@ -37,7 +37,6 @@ func (gd *greedyDownloader) downloadSegments(urls []string, w io.Writer, callbac
 		if callback != nil {
 			callback(float64(i+1) / float64(len(urls)))
 		}
-		// No sleep between segments — go as fast as possible.
 	}
 	return nil
 }

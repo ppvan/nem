@@ -1,6 +1,9 @@
 package extractor
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -47,4 +50,66 @@ func extractPlayerData(playerHTML string) (*PlayerData, error) {
 		VideoID:  idMatch[1],
 		AVSToken: tokenMatch[1],
 	}, nil
+}
+
+func extractLargestNumber(text string) int {
+	max, cur := 0, 0
+	for i := 0; i < len(text); i++ {
+		if '0' <= text[i] && text[i] <= '9' {
+			cur = 10*cur + int(text[i]-'0')
+			if cur >= max {
+				max = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	return max
+}
+
+func mustJoinPath(base string, elem ...string) string {
+	fullPath, err := url.JoinPath(base, elem...)
+	if err != nil {
+		panic(err)
+	}
+
+	return fullPath
+}
+
+func extractDataAfterIEND(raw []byte) ([]byte, error) {
+	// PNG signature
+	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+
+	// Verify PNG signature
+	if len(raw) < len(pngSignature) {
+		return nil, errors.New("not a valid PNG file (missing PNG signature)")
+	}
+
+	pos := len(pngSignature)
+
+	for pos < len(raw) {
+		if pos+8 > len(raw) {
+			return nil, errors.New("incomplete chunk header")
+		}
+
+		chunkLength := binary.BigEndian.Uint32(raw[pos : pos+4])
+
+		chunkType := raw[pos+4 : pos+8]
+
+		chunkSize := 4 + 4 + int(chunkLength) + 4
+
+		if bytes.Equal(chunkType, []byte("IEND")) {
+			iendEnd := pos + chunkSize
+
+			if iendEnd >= len(raw) {
+				return []byte{}, nil
+			}
+
+			return raw[iendEnd:], nil
+		}
+
+		pos += chunkSize
+	}
+
+	return nil, errors.New("IEND chunk not found in PNG file")
 }

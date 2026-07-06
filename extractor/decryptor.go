@@ -16,6 +16,15 @@ import (
 	"strings"
 )
 
+var (
+	KEY_SEGMENT        = regexp.MustCompile(`[?&]_t=([^&\s]+)`)
+	ENCRYPTED_PLAYLIST = regexp.MustCompile(`[?&]_c=\d+`)
+	ENCRYPTED_SEGMENT  = regexp.MustCompile(`(?i)/hls/([0-9a-f]{24})\.ts`)
+	INF_TAG            = regexp.MustCompile(`^#EXTINF:`)
+	ENDLIST_TAG        = regexp.MustCompile(`^#EXT-X-ENDLIST`)
+	KEY_TAG            = regexp.MustCompile(`^#EXT-X-KEY`)
+)
+
 // Envelope represents the structural metadata used during decryption.
 type Envelope struct {
 	CN  string `json:"cn"`
@@ -76,14 +85,13 @@ func decryptPlaylist(raw []byte, envelope *Envelope, token string, originHost st
 	lines := strings.Split(rawPlaylist, "\n")
 	encryptedPlaylist := false
 
-	reC := regexp.MustCompile(`[?&]_c=\d+`)
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") || trimmed == "" {
 			continue
 		}
 
-		if reC.MatchString(line) {
+		if ENCRYPTED_PLAYLIST.MatchString(line) {
 			encryptedPlaylist = true
 		}
 		break
@@ -96,21 +104,16 @@ func decryptPlaylist(raw []byte, envelope *Envelope, token string, originHost st
 	var metadataLines []string
 	var encryptedTokens []string
 
-	reT := regexp.MustCompile(`[?&]_t=([^&\s]+)`)
-	reExtInf := regexp.MustCompile(`^#EXTINF:`)
-	reEndList := regexp.MustCompile(`^#EXT-X-ENDLIST`)
-	reKey := regexp.MustCompile(`^#EXT-X-KEY`)
-
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") || trimmed == "" {
-			if !reExtInf.MatchString(line) && !reEndList.MatchString(line) && !reKey.MatchString(line) {
+			if !INF_TAG.MatchString(line) && !ENDLIST_TAG.MatchString(line) && !KEY_TAG.MatchString(line) {
 				metadataLines = append(metadataLines, line)
 			}
 			continue
 		}
 
-		match := reT.FindStringSubmatch(line)
+		match := KEY_SEGMENT.FindStringSubmatch(line)
 		if match != nil {
 			encryptedTokens = append(encryptedTokens, match[1])
 		}
@@ -152,9 +155,9 @@ func decryptPlaylist(raw []byte, envelope *Envelope, token string, originHost st
 			continue
 		}
 
-		re := regexp.MustCompile(`(?i)/hls/([0-9a-f]{24})\.ts`)
-		match := re.FindStringSubmatch(line)
+		match := ENCRYPTED_SEGMENT.FindStringSubmatch(line)
 		if match == nil {
+
 			decryptedLines = append(decryptedLines, line)
 			continue
 		}
@@ -181,8 +184,7 @@ func decryptSegmentURL(inputURL string, token string) (string, error) {
 		return "", err
 	}
 
-	re := regexp.MustCompile(`(?i)/hls/([0-9a-f]{24})\.ts`)
-	match := re.FindStringSubmatch(u.Path)
+	match := ENCRYPTED_SEGMENT.FindStringSubmatch(u.Path)
 	if match == nil {
 		return "", fmt.Errorf("unable to extract file id from %s", inputURL)
 	}
@@ -231,7 +233,7 @@ func decryptPlaylistBody(ciphertext, cn, sk, uid, ts string) (string, error) {
 	}
 
 	mac := hmac.New(sha256.New, cnBytes)
-	mac.Write([]byte(fmt.Sprintf("%s:%s:%s:0", uid, ts, sk)))
+	fmt.Fprintf(mac, "%s:%s:%s:0", uid, ts, sk)
 	signature := mac.Sum(nil)
 
 	block, err := aes.NewCipher(signature)

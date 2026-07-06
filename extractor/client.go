@@ -33,16 +33,6 @@ type AniVietSubExtractor struct {
 	useAdaptive bool
 }
 
-type EncryptedPlaylist struct {
-	Success int    `json:"success"`
-	Title   string `json:"title"`
-	Link    string `json:"link"`
-}
-
-type LinkObj struct {
-	File string `json:"file"`
-}
-
 func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 
 	// Init cookie jar (uses publicsuffix to handle domain scoping correctly)
@@ -432,6 +422,7 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
 	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
 	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
+	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
 
 	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
 	var rating float64
@@ -448,20 +439,6 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 		Href:          href,
 		TotalEpisodes: accessTime,
 		Episodes:      episodes,
+		Views:         views,
 	}, nil
-}
-
-func extractLargestNumber(text string) int {
-	max, cur := 0, 0
-	for i := 0; i < len(text); i++ {
-		if '0' <= text[i] && text[i] <= '9' {
-			cur = 10*cur + int(text[i]-'0')
-			if cur >= max {
-				max = cur
-			}
-		} else {
-			cur = 0
-		}
-	}
-	return max
 }

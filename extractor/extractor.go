@@ -1,12 +1,8 @@
 package extractor
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 )
 
@@ -32,6 +28,7 @@ type AnimeDetail struct {
 	Rating        float64   `json:"rating"`
 	Href          string    `json:"href"`
 	TotalEpisodes string    `json:"total_episodes"`
+	Views         string    `json:"views"`
 	Episodes      []Episode `json:"episodes"`
 }
 
@@ -56,51 +53,4 @@ type Extractor interface {
 	Download(e Episode, w io.Writer, callback func(progress float64)) error
 	DownloadSegment(url string) ([]byte, error)
 	Trending() ([]SimpleAnime, error)
-}
-
-func mustJoinPath(base string, elem ...string) string {
-	fullPath, err := url.JoinPath(base, elem...)
-	if err != nil {
-		panic(err)
-	}
-
-	return fullPath
-}
-
-func extractDataAfterIEND(raw []byte) ([]byte, error) {
-	// PNG signature
-	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-
-	// Verify PNG signature
-	if len(raw) < len(pngSignature) {
-		return nil, errors.New("not a valid PNG file (missing PNG signature)")
-	}
-
-	pos := len(pngSignature)
-
-	for pos < len(raw) {
-		if pos+8 > len(raw) {
-			return nil, errors.New("incomplete chunk header")
-		}
-
-		chunkLength := binary.BigEndian.Uint32(raw[pos : pos+4])
-
-		chunkType := raw[pos+4 : pos+8]
-
-		chunkSize := 4 + 4 + int(chunkLength) + 4
-
-		if bytes.Equal(chunkType, []byte("IEND")) {
-			iendEnd := pos + chunkSize
-
-			if iendEnd >= len(raw) {
-				return []byte{}, nil
-			}
-
-			return raw[iendEnd:], nil
-		}
-
-		pos += chunkSize
-	}
-
-	return nil, errors.New("IEND chunk not found in PNG file")
 }
