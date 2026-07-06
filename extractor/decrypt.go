@@ -309,15 +309,11 @@ func extractSessionID(token string) string {
 
 func preprocessCiphertext(payload string, key string) string {
 	subKey := key
+
 	if len(subKey) > 8 {
 		subKey = subKey[:8]
 	}
-
-	seed64, err := strconv.ParseUint(subKey, 16, 32)
-	if err != nil {
-		seed64 = 0
-	}
-	seed := uint32(seed64)
+	seed := parseHexPrefix(subKey)
 
 	chars := []rune(payload)
 	type swap struct {
@@ -448,4 +444,22 @@ func parseEnvelope(raw string) (Envelope, error) {
 	}
 
 	return env, nil
+}
+
+func parseHexPrefix(s string) uint32 {
+	end := 0
+	for end < len(s) && isHexDigit(s[end]) {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	v, _ := strconv.ParseUint(s[:end], 16, 32)
+	return uint32(v)
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') ||
+		(c >= 'a' && c <= 'f') ||
+		(c >= 'A' && c <= 'F')
 }
