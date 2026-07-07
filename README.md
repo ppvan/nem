@@ -25,7 +25,6 @@ COMMANDS:
    help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
-   --source string, -s string  Animevietsub url (default: [https://animevietsub.ee])
    --help, -h                  show help
 ```
 

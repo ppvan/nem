@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/fatih/color"
 	"github.com/urfave/cli/v3"
 )
 
@@ -123,19 +124,10 @@ func main() {
 				Action: trendingAction,
 			},
 		},
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:        "source",
-				Aliases:     []string{"s"},
-				Usage:       "Animevietsub url",
-				DefaultText: "[https://animevietsub.be]",
-				Value:       "",
-			},
-		},
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s: %v\n", color.RedString("Error"), err)
 		os.Exit(1)
 	}
 }
