@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -411,10 +412,29 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 	episodeListTag.Find("li.episode>a.btn-episode").Each(func(i int, s *goquery.Selection) {
 		episodes = append(episodes, Episode{
 			MovieId: movieId,
+			Id:      s.AttrOr("data-id", ""),
 			Title:   s.AttrOr("title", ""),
 			Href:    s.AttrOr("href", ""),
 			Hash:    s.AttrOr("data-hash", ""),
 		})
+	})
+	slices.SortFunc(episodes, func(e1, e2 Episode) int {
+		id1, err1 := strconv.ParseInt(e1.Id, 10, 64)
+		id2, err2 := strconv.ParseInt(e2.Id, 10, 64)
+
+		// If either ID is invalid, treat them as equal (incomparable).
+		if err1 != nil || err2 != nil {
+			return 0
+		}
+
+		switch {
+		case id1 < id2:
+			return -1
+		case id1 > id2:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	articleTag := doc.Find("article.TPost")

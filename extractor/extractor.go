@@ -8,6 +8,7 @@ import (
 
 type Episode struct {
 	MovieId int
+	Id      string
 	Title   string
 	Href    string
 	Hash    string
