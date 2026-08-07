@@ -24,7 +24,8 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 
 	ext, err := extractor.NewAniVietSubExtractor("")
 	if err != nil {
-		cli.Exit("failed to init extractor", 1)
+		msg := fmt.Errorf("extractor init: %w", err)
+		return cli.Exit(msg, 1)
 	}
 
 	query := cmd.Args().Get(0)
@@ -45,7 +46,8 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 func trendingAction(ctx context.Context, cmd *cli.Command) error {
 	ext, err := extractor.NewAniVietSubExtractor("")
 	if err != nil {
-		cli.Exit("failed to init extractor", 1)
+		msg := fmt.Errorf("extractor init: %w", err)
+		return cli.Exit(msg, 1)
 	}
 
 	results, err := ext.Trending()
@@ -74,7 +76,8 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 
 	ext, err := extractor.NewAniVietSubExtractor("")
 	if err != nil {
-		cli.Exit("failed to init extractor", 1)
+		msg := fmt.Errorf("extractor init: %w", err)
+		return cli.Exit(msg, 1)
 	}
 
 	details, err := ext.GetAnimeDetails(id)
@@ -115,7 +118,8 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 
 	ext, err := extractor.NewAniVietSubExtractor("")
 	if err != nil {
-		cli.Exit("failed to init extractor", 1)
+		msg := fmt.Errorf("extractor init: %w", err)
+		return cli.Exit(msg, 1)
 	}
 
 	details, err := ext.GetAnimeDetails(id)
@@ -174,7 +178,7 @@ func playlistAction(ctx context.Context, cmd *cli.Command) error {
 
 	ext, err := extractor.NewAniVietSubExtractor("")
 	if err != nil {
-		cli.Exit("failed to init extractor", 1)
+		return cli.Exit("failed to init extractor", 1)
 	}
 
 	details, err := ext.GetAnimeDetails(id)
