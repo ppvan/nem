@@ -176,7 +176,7 @@ func playlistAction(ctx context.Context, cmd *cli.Command) error {
 	episodeNum := cmd.Int("episode")
 	output := cmd.String("output")
 
-	ext, err := extractor.NewAniVietSubExtractor("")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.vc")
 	if err != nil {
 		return cli.Exit("failed to init extractor", 1)
 	}

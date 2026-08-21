@@ -164,7 +164,6 @@ func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
 	req.Header.Set("Sec-Fetch-Dest", "empty")
 	req.Header.Set("Sec-Fetch-Mode", "same-origin")
 	req.Header.Set("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
-	req.Header.Set("Referer", ex.domain)
 }
 
 func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {
@@ -289,7 +288,7 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	origin := fmt.Sprint(playerLink.Scheme, "://", playerLink.Host)
 	playlistURL := fmt.Sprintf("%s/playlist/%s/playlist.m3u8?token=%s", origin, playerData.VideoID, playerData.AVSToken)
 
-	body, headers, err := ex.fetchPlaylist(playlistURL)
+	body, headers, err := ex.fetchPlaylist(playlistURL, playerLink.String())
 	if err != nil {
 		return nil, fmt.Errorf("fetch playlist: %w", err)
 	}
@@ -303,12 +302,13 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	return playlist, nil
 }
 
-func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string) ([]byte, http.Header, error) {
+func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string, origin string) ([]byte, http.Header, error) {
 	req, err := http.NewRequest(http.MethodGet, playlistURL, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	ex.setCommonHeaders(req)
+	req.Header.Set("Referer", origin)
 
 	resp, err := ex.client.Do(req)
 	if err != nil {
