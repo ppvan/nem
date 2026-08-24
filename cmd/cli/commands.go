@@ -22,7 +22,7 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("missing search query")
 	}
 
-	ext, err := extractor.NewAniVietSubExtractor("")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
 	if err != nil {
 		msg := fmt.Errorf("extractor init: %w", err)
 		return cli.Exit(msg, 1)
@@ -44,7 +44,7 @@ func searchAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 func trendingAction(ctx context.Context, cmd *cli.Command) error {
-	ext, err := extractor.NewAniVietSubExtractor("")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
 	if err != nil {
 		msg := fmt.Errorf("extractor init: %w", err)
 		return cli.Exit(msg, 1)
@@ -74,7 +74,7 @@ func detailsAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("invalid ID: %w", err)
 	}
 
-	ext, err := extractor.NewAniVietSubExtractor("")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
 	if err != nil {
 		msg := fmt.Errorf("extractor init: %w", err)
 		return cli.Exit(msg, 1)
@@ -116,7 +116,7 @@ func downloadAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("directory '%s' is not a directory.", output)
 	}
 
-	ext, err := extractor.NewAniVietSubExtractor("")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
 	if err != nil {
 		msg := fmt.Errorf("extractor init: %w", err)
 		return cli.Exit(msg, 1)
@@ -176,7 +176,7 @@ func playlistAction(ctx context.Context, cmd *cli.Command) error {
 	episodeNum := cmd.Int("episode")
 	output := cmd.String("output")
 
-	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.vc")
+	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
 	if err != nil {
 		return cli.Exit("failed to init extractor", 1)
 	}

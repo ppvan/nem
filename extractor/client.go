@@ -2,11 +2,8 @@ package extractor
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"slices"
 	"strconv"
@@ -14,7 +11,9 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"golang.org/x/net/publicsuffix"
+	http "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
+	"github.com/bogdanfinn/tls-client/profiles"
 )
 
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
@@ -26,49 +25,90 @@ const (
 	maxRetries = 3
 	retryDelay = 2 * time.Second
 )
+const (
+	chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+		"(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+	secCHUA = `"Chromium";v="133", "Not(A:Brand";v="24", "Google Chrome";v="133"`
+
+	acceptDocument = "text/html,application/xhtml+xml,application/xml;q=0.9," +
+		"image/avif,image/webp,image/apng,*/*;q=0.8"
+	acceptDefault  = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	acceptLanguage = "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
+	acceptEncoding = "gzip, deflate, br, zstd"
+)
+
+var (
+	headerOrder = []string{
+		"sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
+		"upgrade-insecure-requests", "user-agent", "accept",
+		"x-client-env",
+		"sec-fetch-site", "sec-fetch-mode", "sec-fetch-user", "sec-fetch-dest",
+		"accept-encoding", "accept-language", "cookie",
+	}
+	pseudoHeaderOrder = []string{":method", ":authority", ":scheme", ":path"}
+)
+
+// fetchMode is the Sec-Fetch-* / Accept quartet Chrome derives from the
+// request's initiator. Zero-value user means "not a user activation".
+type fetchMode struct {
+	accept, site, mode, dest, user string
+}
+
+var (
+	modeNavigate = fetchMode{acceptDocument, "none", "navigate", "document", "?1"}
+	modeXHR      = fetchMode{acceptDefault, "same-origin", "same-origin", "empty", ""}
+)
+
+func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
+	ex.setHeaders(req, modeXHR)
+}
+
+func (ex *AniVietSubExtractor) setHeaders(req *http.Request, fm fetchMode) {
+	h := http.Header{
+		"sec-ch-ua":          {secCHUA},
+		"sec-ch-ua-mobile":   {"?0"},
+		"sec-ch-ua-platform": {`"Windows"`},
+		"user-agent":         {chromeUA},
+		"accept":             {fm.accept},
+		"x-client-env":       {"de8964fbdb3b64558decc2012fc242fc"},
+		"sec-fetch-site":     {fm.site},
+		"sec-fetch-mode":     {fm.mode},
+		"sec-fetch-dest":     {fm.dest},
+		"accept-encoding":    {acceptEncoding},
+		"accept-language":    {acceptLanguage},
+		"referer":            {ex.domain},
+
+		http.HeaderOrderKey:  headerOrder,
+		http.PHeaderOrderKey: pseudoHeaderOrder,
+	}
+	if fm.user != "" {
+		h["sec-fetch-user"] = []string{fm.user}
+		h["upgrade-insecure-requests"] = []string{"1"}
+	}
+	req.Header = h
+}
 
 type AniVietSubExtractor struct {
 	domain      string
-	client      *http.Client
-	jar         *cookiejar.Jar
+	client      tls_client.HttpClient
 	useAdaptive bool
 }
 
 func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 
 	// Init cookie jar (uses publicsuffix to handle domain scoping correctly)
-	jar, err := cookiejar.New(&cookiejar.Options{
-		PublicSuffixList: publicsuffix.List,
-	})
+
+	jar := tls_client.NewCookieJar()
+
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
+		tls_client.WithClientProfile(profiles.Chrome_133), // use newest profile your version has
+		tls_client.WithCookieJar(jar),
+		tls_client.WithTimeoutSeconds(20),
+		tls_client.WithRandomTLSExtensionOrder(), // Chrome 106+ shuffles per connection
+	)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
-	}
-
-	tlsConfig := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		MaxVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: false,
-		CipherSuites: []uint16{
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-		},
-	}
-
-	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
-	}
-
-	client := &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: transport,
-		Jar:       jar,
+		return nil, err
 	}
 
 	// Auto resolve domain if not provided
@@ -83,7 +123,6 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 	ex := &AniVietSubExtractor{
 		client: client,
 		domain: domain,
-		jar:    jar,
 	}
 
 	// Fetch homepage to get Cloudflare cookies before any real request
@@ -149,21 +188,18 @@ func (ex *AniVietSubExtractor) doWithRetry(req *http.Request) (*http.Response, e
 			return resp, nil
 		}
 
+		if resp.StatusCode == http.StatusForbidden {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			fmt.Printf("403 from %s\n  server=%s cf-ray=%s cf-mitigated=%s\n  body: %.400s\n",
+				req.URL, resp.Header.Get("server"), resp.Header.Get("cf-ray"),
+				resp.Header.Get("cf-mitigated"), b)
+		}
+
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}
 
 	return nil, fmt.Errorf("request failed with 403 after %d retries", maxRetries)
-}
-
-func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", USER_AGENT)
-	}
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Sec-Fetch-Mode", "same-origin")
-	req.Header.Set("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
 }
 
 func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {

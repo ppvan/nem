@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
-	"net/http"
 	"time"
+
+	http "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
 )
 
 type SegmentDownloader interface {
@@ -13,14 +15,14 @@ type SegmentDownloader interface {
 }
 
 type greedyDownloader struct {
-	client  *http.Client
+	client  tls_client.HttpClient
 	referer string
 
 	backoff    time.Duration
 	maxBackoff time.Duration
 }
 
-func newGreedyDownloader(client *http.Client, referer string) *greedyDownloader {
+func newGreedyDownloader(client tls_client.HttpClient, referer string) *greedyDownloader {
 	return &greedyDownloader{
 		client:     client,
 		referer:    referer,
@@ -100,7 +102,7 @@ func (gd *greedyDownloader) sleepWithJitter(d time.Duration) {
 }
 
 type adaptiveDownloader struct {
-	client        *http.Client
+	client        tls_client.HttpClient
 	referer       string
 	delay         time.Duration
 	minDelay      time.Duration
@@ -108,7 +110,7 @@ type adaptiveDownloader struct {
 	successStreak int
 }
 
-func newAdaptiveDownloader(client *http.Client, referer string) *adaptiveDownloader {
+func newAdaptiveDownloader(client tls_client.HttpClient, referer string) *adaptiveDownloader {
 	return &adaptiveDownloader{
 		client:   client,
 		referer:  referer,

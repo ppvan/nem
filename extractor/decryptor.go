@@ -9,11 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	http "github.com/bogdanfinn/fhttp"
 )
 
 var (
@@ -199,7 +200,7 @@ func decryptSegmentURL(inputURL string, token string) (string, error) {
 	}
 
 	mac := hmac.New(sha256.New, []byte(masterKey))
-	mac.Write([]byte(fmt.Sprintf("url-cipher|%s", fileID)))
+	mac.Write(fmt.Appendf(nil, "url-cipher|%s", fileID))
 	aesMaterial := mac.Sum(nil)
 
 	block, err := aes.NewCipher(aesMaterial)
