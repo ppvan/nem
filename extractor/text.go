@@ -5,9 +5,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 func extractPlaylistLink(htmlContent string) (*url.URL, error) {
@@ -112,4 +117,121 @@ func extractDataAfterIEND(raw []byte) ([]byte, error) {
 	}
 
 	return nil, errors.New("IEND chunk not found in PNG file")
+}
+
+func extractSegmentURLs(playlist []byte) []string {
+	lines := strings.Split(string(playlist), "\n")
+	urls := make([]string, 0, len(lines)/2)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "http") {
+			urls = append(urls, line)
+		}
+	}
+	return urls
+}
+
+func extractMovies(r io.Reader) ([]SimpleAnime, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, err
+	}
+	movies := []SimpleAnime{}
+	doc.Find("li:not(.ss-bottom)").Each(func(i int, s *goquery.Selection) {
+		title := s.Find(".ss-title").Text()
+		href := s.Find(".ss-title").AttrOr("href", "")
+		movies = append(movies, SimpleAnime{
+			Id:    extractLargestNumber(href),
+			Title: title,
+			Href:  href,
+		})
+	})
+	return movies, nil
+}
+
+func extractTrendingMovies(r io.Reader) ([]SimpleAnime, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, err
+	}
+	movies := []SimpleAnime{}
+	doc.Find("ul.bxh-movie-phimletv li").Each(func(i int, s *goquery.Selection) {
+		a := s.Find("h3.title-item a")
+		title := a.Text()
+		href := a.AttrOr("href", "")
+		thumbnail := s.Find("a.thumb img").AttrOr("src", "")
+		if title != "" && href != "" {
+			movies = append(movies, SimpleAnime{
+				Id:        extractLargestNumber(href),
+				Title:     title,
+				Href:      href,
+				Thumbnail: thumbnail,
+			})
+		}
+	})
+	return movies, nil
+}
+
+func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, error) {
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("error loading document: %w", err)
+	}
+
+	href := doc.Find("meta[property='og:url']").First().AttrOr("content", "")
+
+	var episodes []Episode
+	episodeListTag := doc.Find("#list-server").First()
+	episodeListTag.Find("li.episode>a.btn-episode").Each(func(i int, s *goquery.Selection) {
+		episodes = append(episodes, Episode{
+			MovieId: movieId,
+			Id:      s.AttrOr("data-id", ""),
+			Title:   s.AttrOr("title", ""),
+			Href:    s.AttrOr("href", ""),
+			Hash:    s.AttrOr("data-hash", ""),
+		})
+	})
+	slices.SortFunc(episodes, func(e1, e2 Episode) int {
+		id1, err1 := strconv.ParseInt(e1.Id, 10, 64)
+		id2, err2 := strconv.ParseInt(e2.Id, 10, 64)
+
+		// If either ID is invalid, treat them as equal (incomparable).
+		if err1 != nil || err2 != nil {
+			return 0
+		}
+
+		switch {
+		case id1 < id2:
+			return -1
+		case id1 > id2:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	articleTag := doc.Find("article.TPost")
+	title := strings.TrimSpace(articleTag.Find("h1.Title").Text())
+	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
+	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
+	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
+	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
+
+	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
+	var rating float64
+	if rv, err := strconv.ParseFloat(scoreStr, 64); err == nil {
+		rating = rv / 10
+	}
+
+	return &AnimeDetail{
+		Id:            movieId,
+		Title:         title,
+		Subtitle:      subtitle,
+		Description:   description,
+		Rating:        rating,
+		Href:          href,
+		TotalEpisodes: accessTime,
+		Episodes:      episodes,
+		Views:         views,
+	}, nil
 }

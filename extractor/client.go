@@ -5,22 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	http "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
 	"github.com/bogdanfinn/tls-client/profiles"
 )
 
-const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/383.0.797833943 Mobile/15E148 Safari/604.1"
 const SEARCH_API = "/ajax/suggest"
 const PLAYLIST_API = "/ajax/player"
 const TRENDING_API = "/bang-xep-hang/season.html"
-
 const (
 	maxRetries = 3
 	retryDelay = 2 * time.Second
@@ -55,38 +50,8 @@ type fetchMode struct {
 }
 
 var (
-	modeNavigate = fetchMode{acceptDocument, "none", "navigate", "document", "?1"}
-	modeXHR      = fetchMode{acceptDefault, "same-origin", "same-origin", "empty", ""}
+	modeXHR = fetchMode{acceptDefault, "same-origin", "same-origin", "empty", ""}
 )
-
-func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
-	ex.setHeaders(req, modeXHR)
-}
-
-func (ex *AniVietSubExtractor) setHeaders(req *http.Request, fm fetchMode) {
-	h := http.Header{
-		"sec-ch-ua":          {secCHUA},
-		"sec-ch-ua-mobile":   {"?0"},
-		"sec-ch-ua-platform": {`"Windows"`},
-		"user-agent":         {chromeUA},
-		"accept":             {fm.accept},
-		"x-client-env":       {"de8964fbdb3b64558decc2012fc242fc"},
-		"sec-fetch-site":     {fm.site},
-		"sec-fetch-mode":     {fm.mode},
-		"sec-fetch-dest":     {fm.dest},
-		"accept-encoding":    {acceptEncoding},
-		"accept-language":    {acceptLanguage},
-		"referer":            {ex.domain},
-
-		http.HeaderOrderKey:  headerOrder,
-		http.PHeaderOrderKey: pseudoHeaderOrder,
-	}
-	if fm.user != "" {
-		h["sec-fetch-user"] = []string{fm.user}
-		h["upgrade-insecure-requests"] = []string{"1"}
-	}
-	req.Header = h
-}
 
 type AniVietSubExtractor struct {
 	domain      string
@@ -96,10 +61,7 @@ type AniVietSubExtractor struct {
 
 func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 
-	// Init cookie jar (uses publicsuffix to handle domain scoping correctly)
-
 	jar := tls_client.NewCookieJar()
-
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
 		tls_client.WithClientProfile(profiles.Chrome_133), // use newest profile your version has
 		tls_client.WithCookieJar(jar),
@@ -131,75 +93,6 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 	}
 
 	return ex, nil
-}
-
-func (ex *AniVietSubExtractor) warmUp() error {
-	req, err := http.NewRequest(http.MethodGet, ex.domain, nil)
-	if err != nil {
-		return err
-	}
-	ex.setCommonHeaders(req)
-
-	resp, err := ex.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-
-	return nil
-}
-
-// doWithRetry executes a request and retries on 403 (Cloudflare challenge).
-func (ex *AniVietSubExtractor) doWithRetry(req *http.Request) (*http.Response, error) {
-	var bodyBytes []byte
-	if req.Body != nil && req.Body != http.NoBody {
-		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
-		if err != nil {
-			return nil, err
-		}
-		req.Body.Close()
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	}
-
-	ex.setCommonHeaders(req)
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			fmt.Printf("403 received, retrying (%d/%d) after warm-up...\n", attempt, maxRetries)
-			time.Sleep(retryDelay)
-
-			if err := ex.warmUp(); err != nil {
-				return nil, fmt.Errorf("warm-up failed on retry: %w", err)
-			}
-
-			if bodyBytes != nil {
-				req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-			}
-		}
-
-		resp, err := ex.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusForbidden {
-			return resp, nil
-		}
-
-		if resp.StatusCode == http.StatusForbidden {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-			fmt.Printf("403 from %s\n  server=%s cf-ray=%s cf-mitigated=%s\n  body: %.400s\n",
-				req.URL, resp.Header.Get("server"), resp.Header.Get("cf-ray"),
-				resp.Header.Get("cf-mitigated"), b)
-		}
-
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}
-
-	return nil, fmt.Errorf("request failed with 403 after %d retries", maxRetries)
 }
 
 func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {
@@ -281,25 +174,6 @@ func (ex *AniVietSubExtractor) Trending() ([]SimpleAnime, error) {
 	return movies, nil
 }
 
-func (ex *AniVietSubExtractor) fetchHtml(url string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return "", fmt.Errorf("setup request: %w", err)
-	}
-	r, err := ex.doWithRetry(req)
-	if err != nil {
-		return "", fmt.Errorf("fetch: %w", err)
-	}
-	defer r.Body.Close()
-
-	content, err := io.ReadAll(r.Body)
-	if err != nil {
-		return "", fmt.Errorf("read body: %w", err)
-	}
-
-	return string(content), nil
-}
-
 func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	rawEpisode, err := ex.fetchHtml(e.Href)
 	if err != nil {
@@ -338,6 +212,25 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	return playlist, nil
 }
 
+func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
+	playlist, err := ex.GetM3UPlaylist(e)
+	if err != nil {
+		return err
+	}
+	segmentURLs := extractSegmentURLs(playlist)
+	if len(segmentURLs) == 0 {
+		return fmt.Errorf("no segment URLs found in playlist")
+	}
+
+	var downloader SegmentDownloader
+	if ex.useAdaptive {
+		downloader = newAdaptiveDownloader(ex.client, ex.domain)
+	} else {
+		downloader = newGreedyDownloader(ex.client, ex.domain)
+	}
+	return downloader.downloadSegments(segmentURLs, w, callback)
+}
+
 func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string, origin string) ([]byte, http.Header, error) {
 	req, err := http.NewRequest(http.MethodGet, playlistURL, nil)
 	if err != nil {
@@ -364,137 +257,118 @@ func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string, origin string) 
 	return body, resp.Header, nil
 }
 
-func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
-	playlist, err := ex.GetM3UPlaylist(e)
+func (ex *AniVietSubExtractor) warmUp() error {
+	req, err := http.NewRequest(http.MethodGet, ex.domain, nil)
 	if err != nil {
 		return err
 	}
-	segmentURLs := extractSegmentURLs(playlist)
-	if len(segmentURLs) == 0 {
-		return fmt.Errorf("no segment URLs found in playlist")
-	}
+	ex.setCommonHeaders(req)
 
-	var downloader SegmentDownloader
-	if ex.useAdaptive {
-		downloader = newAdaptiveDownloader(ex.client, ex.domain)
-	} else {
-		downloader = newGreedyDownloader(ex.client, ex.domain)
-	}
-	return downloader.downloadSegments(segmentURLs, w, callback)
-}
-func extractSegmentURLs(playlist []byte) []string {
-	lines := strings.Split(string(playlist), "\n")
-	urls := make([]string, 0, len(lines)/2)
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http") {
-			urls = append(urls, line)
-		}
-	}
-	return urls
-}
-
-func extractMovies(r io.Reader) ([]SimpleAnime, error) {
-	doc, err := goquery.NewDocumentFromReader(r)
+	resp, err := ex.client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	movies := []SimpleAnime{}
-	doc.Find("li:not(.ss-bottom)").Each(func(i int, s *goquery.Selection) {
-		title := s.Find(".ss-title").Text()
-		href := s.Find(".ss-title").AttrOr("href", "")
-		movies = append(movies, SimpleAnime{
-			Id:    extractLargestNumber(href),
-			Title: title,
-			Href:  href,
-		})
-	})
-	return movies, nil
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	return nil
 }
 
-func extractTrendingMovies(r io.Reader) ([]SimpleAnime, error) {
-	doc, err := goquery.NewDocumentFromReader(r)
+func (ex *AniVietSubExtractor) fetchHtml(url string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("setup request: %w", err)
 	}
-	movies := []SimpleAnime{}
-	doc.Find("ul.bxh-movie-phimletv li").Each(func(i int, s *goquery.Selection) {
-		a := s.Find("h3.title-item a")
-		title := a.Text()
-		href := a.AttrOr("href", "")
-		thumbnail := s.Find("a.thumb img").AttrOr("src", "")
-		if title != "" && href != "" {
-			movies = append(movies, SimpleAnime{
-				Id:        extractLargestNumber(href),
-				Title:     title,
-				Href:      href,
-				Thumbnail: thumbnail,
-			})
-		}
-	})
-	return movies, nil
+	r, err := ex.doWithRetry(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch: %w", err)
+	}
+	defer r.Body.Close()
+
+	content, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", fmt.Errorf("read body: %w", err)
+	}
+
+	return string(content), nil
 }
 
-func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, error) {
-	doc, err := goquery.NewDocumentFromReader(r)
-	if err != nil {
-		return nil, fmt.Errorf("error loading document: %w", err)
+func (ex *AniVietSubExtractor) doWithRetry(req *http.Request) (*http.Response, error) {
+	var bodyBytes []byte
+	if req.Body != nil && req.Body != http.NoBody {
+		var err error
+		bodyBytes, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
-	href := doc.Find("meta[property='og:url']").First().AttrOr("content", "")
+	ex.setCommonHeaders(req)
 
-	var episodes []Episode
-	episodeListTag := doc.Find("#list-server").First()
-	episodeListTag.Find("li.episode>a.btn-episode").Each(func(i int, s *goquery.Selection) {
-		episodes = append(episodes, Episode{
-			MovieId: movieId,
-			Id:      s.AttrOr("data-id", ""),
-			Title:   s.AttrOr("title", ""),
-			Href:    s.AttrOr("href", ""),
-			Hash:    s.AttrOr("data-hash", ""),
-		})
-	})
-	slices.SortFunc(episodes, func(e1, e2 Episode) int {
-		id1, err1 := strconv.ParseInt(e1.Id, 10, 64)
-		id2, err2 := strconv.ParseInt(e2.Id, 10, 64)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("403 received, retrying (%d/%d) after warm-up...\n", attempt, maxRetries)
+			time.Sleep(retryDelay)
 
-		// If either ID is invalid, treat them as equal (incomparable).
-		if err1 != nil || err2 != nil {
-			return 0
+			if err := ex.warmUp(); err != nil {
+				return nil, fmt.Errorf("warm-up failed on retry: %w", err)
+			}
+
+			if bodyBytes != nil {
+				req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			}
 		}
 
-		switch {
-		case id1 < id2:
-			return -1
-		case id1 > id2:
-			return 1
-		default:
-			return 0
+		resp, err := ex.client.Do(req)
+		if err != nil {
+			return nil, err
 		}
-	})
 
-	articleTag := doc.Find("article.TPost")
-	title := strings.TrimSpace(articleTag.Find("h1.Title").Text())
-	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
-	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
-	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
-	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
+		if resp.StatusCode != http.StatusForbidden {
+			return resp, nil
+		}
 
-	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
-	var rating float64
-	if rv, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-		rating = rv / 10
+		if resp.StatusCode == http.StatusForbidden {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			fmt.Printf("403 from %s\n  server=%s cf-ray=%s cf-mitigated=%s\n  body: %.400s\n",
+				req.URL, resp.Header.Get("server"), resp.Header.Get("cf-ray"),
+				resp.Header.Get("cf-mitigated"), b)
+		}
+
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 	}
 
-	return &AnimeDetail{
-		Id:            movieId,
-		Title:         title,
-		Subtitle:      subtitle,
-		Description:   description,
-		Rating:        rating,
-		Href:          href,
-		TotalEpisodes: accessTime,
-		Episodes:      episodes,
-		Views:         views,
-	}, nil
+	return nil, fmt.Errorf("request failed with 403 after %d retries", maxRetries)
+}
+
+func (ex *AniVietSubExtractor) setCommonHeaders(req *http.Request) {
+	ex.setHeaders(req, modeXHR)
+}
+
+func (ex *AniVietSubExtractor) setHeaders(req *http.Request, fm fetchMode) {
+	h := http.Header{
+		"sec-ch-ua":          {secCHUA},
+		"sec-ch-ua-mobile":   {"?0"},
+		"sec-ch-ua-platform": {`"Windows"`},
+		"user-agent":         {chromeUA},
+		"accept":             {fm.accept},
+		"x-client-env":       {"de8964fbdb3b64558decc2012fc242fc"},
+		"sec-fetch-site":     {fm.site},
+		"sec-fetch-mode":     {fm.mode},
+		"sec-fetch-dest":     {fm.dest},
+		"accept-encoding":    {acceptEncoding},
+		"accept-language":    {acceptLanguage},
+		"referer":            {ex.domain},
+
+		http.HeaderOrderKey:  headerOrder,
+		http.PHeaderOrderKey: pseudoHeaderOrder,
+	}
+	if fm.user != "" {
+		h["sec-fetch-user"] = []string{fm.user}
+		h["upgrade-insecure-requests"] = []string{"1"}
+	}
+	req.Header = h
 }

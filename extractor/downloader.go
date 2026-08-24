@@ -74,7 +74,7 @@ func (gd *greedyDownloader) fetchSegment(url string) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	req.Header.Set("Referer", gd.referer)
-	req.Header.Set("User-Agent", USER_AGENT)
+	req.Header.Set("User-Agent", chromeUA)
 
 	resp, err := gd.client.Do(req)
 	if err != nil {
@@ -174,7 +174,7 @@ func (ad *adaptiveDownloader) fetchSegment(url string) ([]byte, bool, error) {
 	}
 
 	req.Header.Set("Referer", ad.referer)
-	req.Header.Set("User-Agent", USER_AGENT)
+	req.Header.Set("User-Agent", chromeUA)
 
 	resp, err := ad.client.Do(req)
 	if err != nil {
