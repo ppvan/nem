@@ -4,6 +4,7 @@ import (
 	"runtime"
 
 	"github.com/ppvan/nem/extractor"
+
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
 )

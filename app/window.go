@@ -1,20 +1,15 @@
 package main
 
 import (
-	"strconv"
+	"fmt"
+	"unsafe"
 
 	"github.com/ppvan/nem/extractor"
+
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/ui"
 	"github.com/rodrigocfd/windigo/win"
 )
-
-// MaxEpisodeSlots is the number of checkbox slots pre-built in the UI.
-// Windigo controls must be created up front (during WM_CREATE), so we build
-// a fixed pool of checkboxes and just show/hide + relabel them once real
-// episode data comes back from the extractor. Bump this if you expect
-// anime with more episodes than fit here.
-const MaxEpisodeSlots = 30
 
 // Overall two-column layout, modeled after Free Manga Downloader's
 // sidebar-catalog + main-workspace structure: a left sidebar for
@@ -31,15 +26,6 @@ const (
 	rightW = 700 // 255..955, leaving a 15px right margin
 )
 
-// Grid layout for the fixed episode-checkbox pool, sized to rightW.
-const (
-	epColCount  = 5
-	epColWidth  = rightW / epColCount // 140
-	epRowHeight = 26
-	epGridX     = rightX
-	epGridY     = 285
-)
-
 // MyWindow holds every control plus the small amount of UI-side state.
 type MyWindow struct {
 	wnd *ui.Main
@@ -50,11 +36,6 @@ type MyWindow struct {
 	btnTrending      *ui.Button
 	lvResults        *ui.ListView
 	lblSidebarStatus *ui.Static
-
-	// Right workspace: URL/Load row
-	lblURL     *ui.Static
-	edtURL     *ui.Edit
-	btnLoadURL *ui.Button
 
 	// Right workspace: info block
 	thumbnail   *ui.Control // custom-painted cover image
@@ -67,7 +48,7 @@ type MyWindow struct {
 	// Right workspace: episodes
 	lblEpisodes  *ui.Static
 	btnSelectAll *ui.Button
-	episodeChks  [MaxEpisodeSlots]*ui.CheckBox
+	lvEpisodes   *ui.ListView
 
 	// Right workspace: destination + actions
 	lblPath        *ui.Static
@@ -99,6 +80,15 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 
 	// --- Left sidebar: catalog browsing -----------------------------------
 
+	// Reserve room for the vertical scrollbar in the column width: a
+	// LVS_REPORT ListView's horizontal scroll extent is driven by the sum
+	// of its column widths, which is computed against the control's full
+	// width, not its content width net of the vertical scrollbar. Size the
+	// single column right up to that scrollbar and no further, or a
+	// horizontal scrollbar appears the moment enough rows trigger a
+	// vertical one — even though there's no actual horizontal overflow.
+	vScrollW := int(win.GetSystemMetrics(co.SM_CXVSCROLL))
+
 	edtSidebarSearch := ui.NewEdit(wnd, ui.OptsEdit().
 		Position(ui.Dpi(sidebarX, 35)).
 		Width(ui.DpiX(150)),
@@ -120,7 +110,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		Size(ui.Dpi(sidebarW, 480)).
 		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SINGLESEL|co.LVS_SHOWSELALWAYS).
 		CtrlExStyle(co.LVS_EX_FULLROWSELECT).
-		Column("Title", ui.DpiX(sidebarW-4)),
+		Column("Title", ui.DpiX(sidebarW)-vScrollW-2),
 	)
 	lblSidebarStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
@@ -128,28 +118,10 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		Size(ui.Dpi(sidebarW, 20)),
 	)
 
-	// --- Right workspace: URL/Load row -------------------------------------
-
-	lblURL := ui.NewStatic(wnd, ui.OptsStatic().
-		Text("URL:").
-		Position(ui.Dpi(rightX, 15)).
-		Size(ui.Dpi(35, 20)),
-	)
-	edtURL := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(rightX+40, 12)).
-		Width(ui.DpiX(565)),
-	)
-	btnLoadURL := ui.NewButton(wnd, ui.OptsButton().
-		Text("Load").
-		Position(ui.Dpi(rightX+615, 11)).
-		Width(ui.DpiX(85)).
-		Height(ui.DpiY(26)),
-	)
-
 	// --- Right workspace: info block ---------------------------------------
 
 	thumbnail := ui.NewControl(wnd, ui.OptsControl().
-		Position(ui.Dpi(rightX, 50)).
+		Position(ui.Dpi(rightX, 12)).
 		Size(ui.Dpi(160, 200)),
 	)
 
@@ -157,27 +129,27 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 	metaW := rightW - 175
 
 	lblTitle := ui.NewStatic(wnd, ui.OptsStatic().
-		Text("Title will appear here").
-		Position(ui.Dpi(metaX, 50)).
+		Text("Select or search for a title to get started").
+		Position(ui.Dpi(metaX, 12)).
 		Size(ui.Dpi(metaW, 22)),
 	)
 	lblSubtitle := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(metaX, 74)).
+		Position(ui.Dpi(metaX, 36)).
 		Size(ui.Dpi(metaW, 20)),
 	)
 	lblRating := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Rating: —").
-		Position(ui.Dpi(metaX, 96)).
+		Position(ui.Dpi(metaX, 58)).
 		Size(ui.Dpi(metaW, 20)),
 	)
 	lblStats := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(metaX, 118)).
+		Position(ui.Dpi(metaX, 80)).
 		Size(ui.Dpi(metaW, 20)),
 	)
 	edtDesc := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(metaX, 142)).
+		Position(ui.Dpi(metaX, 104)).
 		Width(ui.DpiX(metaW)).
 		Height(ui.DpiY(108)).
 		CtrlStyle(co.ES_MULTILINE|co.ES_LEFT|co.ES_AUTOVSCROLL|co.ES_READONLY),
@@ -187,30 +159,24 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 
 	lblEpisodes := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Episodes:").
-		Position(ui.Dpi(rightX, 260)).
+		Position(ui.Dpi(rightX, 222)).
 		Size(ui.Dpi(150, 20)),
 	)
 	btnSelectAll := ui.NewButton(wnd, ui.OptsButton().
 		Text("Select All").
-		Position(ui.Dpi(rightX+rightW-100, 257)).
+		Position(ui.Dpi(rightX+rightW-100, 219)).
 		Width(ui.DpiX(100)).
 		Height(ui.DpiY(24)),
 	)
-
-	var episodeChks [MaxEpisodeSlots]*ui.CheckBox
-	for i := 0; i < MaxEpisodeSlots; i++ {
-		row := i / epColCount
-		col := i % epColCount
-		x := epGridX + col*epColWidth
-		y := epGridY + row*epRowHeight
-
-		chk := ui.NewCheckBox(wnd, ui.OptsCheckBox().
-			Text("Ep. --").
-			Position(ui.Dpi(x, y)).
-			Size(ui.Dpi(epColWidth-10, 20)),
-		)
-		episodeChks[i] = chk
-	}
+	epNumColW := ui.DpiX(50)
+	lvEpisodes := ui.NewListView(wnd, ui.OptsListView().
+		Position(ui.Dpi(rightX, 248)).
+		Size(ui.Dpi(rightW, 192)).
+		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SHOWSELALWAYS).
+		CtrlExStyle(co.LVS_EX_FULLROWSELECT|co.LVS_EX_CHECKBOXES).
+		Column("#", epNumColW).
+		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-8),
+	)
 
 	// --- Right workspace: destination + actions -----------------------------
 
@@ -257,10 +223,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		lvResults:        lvResults,
 		lblSidebarStatus: lblSidebarStatus,
 
-		lblURL:     lblURL,
-		edtURL:     edtURL,
-		btnLoadURL: btnLoadURL,
-
 		thumbnail:   thumbnail,
 		lblTitle:    lblTitle,
 		lblSubtitle: lblSubtitle,
@@ -270,7 +232,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 
 		lblEpisodes:  lblEpisodes,
 		btnSelectAll: btnSelectAll,
-		episodeChks:  episodeChks,
+		lvEpisodes:   lvEpisodes,
 
 		lblPath:        lblPath,
 		edtPath:        edtPath,
@@ -281,11 +243,9 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 	}
 
 	// All child controls get their real HWNDs during WM_CREATE, in the
-	// order they were registered above. Hide the unused episode checkbox
-	// slots, and kick off an initial Trending() load for the sidebar, only
-	// once that has happened.
+	// order they were registered above. Kick off an initial Trending()
+	// load for the sidebar only once that has happened.
 	wnd.On().WmCreate(func(_ ui.WmCreate) int {
-		me.setEpisodeCount(0)
 		me.loadResultsList("Trending", me.ext.Trending)
 		return 0
 	})
@@ -294,19 +254,15 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 	return wnd.RunAsMain()
 }
 
-// setEpisodeCount shows the first n episode checkboxes, labeled from
-// me.currentInfo.Episodes[i].Title (falling back to a plain position number
-// if the title is empty), and hides the rest.
-func (me *MyWindow) setEpisodeCount(n int) {
-	for i, chk := range me.episodeChks {
-		if i < n {
-			ep := me.currentInfo.Episodes[i]
-			chk.SetTextAndResize(episodeLabel(ep, i+1))
-			chk.SetCheck(false)
-			chk.Hwnd().ShowWindow(co.SW_SHOW)
-		} else {
-			chk.Hwnd().ShowWindow(co.SW_HIDE)
-		}
+// setEpisodes replaces lvEpisodes' rows with one per episode, each
+// starting unchecked. Unlike the fixed-checkbox-pool approach this
+// replaced, a ListView's rows can be added/removed at runtime, so there's
+// no fixed cap on episode count anymore.
+func (me *MyWindow) setEpisodes(episodes []extractor.Episode) {
+	me.lvEpisodes.DeleteAllItems()
+	for i, ep := range episodes {
+		item := me.lvEpisodes.AddItem(fmt.Sprintf("%02d", i+1), episodeLabel(ep, i+1))
+		setListViewItemChecked(me.lvEpisodes, item.Index(), false)
 	}
 }
 
@@ -321,5 +277,39 @@ func episodeLabel(ep extractor.Episode, number int) string {
 	if ep.Title != "" {
 		return ep.Title
 	}
-	return "Ep. " + strconv.Itoa(number)
+	return fmt.Sprintf("Episode %d", number)
+}
+
+// --- LVS_EX_CHECKBOXES state helpers ---------------------------------------
+//
+// Windigo's ui.ListView/ListViewItem wrapper doesn't expose the per-row
+// checkbox state added by the LVS_EX_CHECKBOXES extended style, so these
+// send the underlying LVM_SETITEMSTATE/LVM_GETITEMSTATE messages directly
+// — the same pattern ui.ListViewItem.Select()/IsSelected() use internally
+// for LVIS_SELECTED, just with the state-image bits (LVIS_STATEIMAGEMASK)
+// that LVS_EX_CHECKBOXES repurposes for the checkbox: state image index 1
+// is unchecked, index 2 is checked (both encoded as index<<12).
+
+const (
+	lvisUnchecked = co.LVIS(0x1000) // INDEXTOSTATEIMAGEMASK(1)
+	lvisChecked   = co.LVIS(0x2000) // INDEXTOSTATEIMAGEMASK(2)
+)
+
+func setListViewItemChecked(lv *ui.ListView, index int, checked bool) {
+	state := lvisUnchecked
+	if checked {
+		state = lvisChecked
+	}
+	lvi := win.LVITEM{
+		State:     state,
+		StateMask: co.LVIS_STATEIMAGEMASK,
+	}
+	_, _ = lv.Hwnd().SendMessage(co.LVM_SETITEMSTATE,
+		win.WPARAM(int32(index)), win.LPARAM(unsafe.Pointer(&lvi)))
+}
+
+func isListViewItemChecked(lv *ui.ListView, index int) bool {
+	ret, _ := lv.Hwnd().SendMessage(co.LVM_GETITEMSTATE,
+		win.WPARAM(int32(index)), win.LPARAM(co.LVIS_STATEIMAGEMASK))
+	return co.LVIS(ret) == lvisChecked
 }

@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/ppvan/nem/extractor"
+
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/x/cosh"
@@ -100,42 +101,29 @@ func (me *MyWindow) events() {
 		if !ok {
 			return
 		}
-		me.edtURL.SetText(sa.Href)
 		me.loadAnimeDetails(func() (*extractor.AnimeDetail, error) {
 			return me.ext.GetAnimeDetails(sa.Id)
-		})
-	})
-
-	// --- Load by URL ---------------------------------------------------------
-
-	me.btnLoadURL.On().BnClicked(func() {
-		url := me.edtURL.Text()
-		me.loadAnimeDetails(func() (*extractor.AnimeDetail, error) {
-			return me.ext.GetAnimeDetailsHref(url)
 		})
 	})
 
 	// --- Select all / none episodes -----------------------------------------
 
 	me.btnSelectAll.On().BnClicked(func() {
-		if me.currentInfo == nil {
+		n := me.lvEpisodes.ItemCount()
+		if n == 0 {
 			return
-		}
-		n := len(me.currentInfo.Episodes)
-		if n > MaxEpisodeSlots {
-			n = MaxEpisodeSlots
 		}
 
 		allChecked := true
 		for i := 0; i < n; i++ {
-			if !me.episodeChks[i].IsChecked() {
+			if !isListViewItemChecked(me.lvEpisodes, i) {
 				allChecked = false
 				break
 			}
 		}
 
 		for i := 0; i < n; i++ {
-			me.episodeChks[i].SetCheck(!allChecked)
+			setListViewItemChecked(me.lvEpisodes, i, !allChecked)
 		}
 	})
 
@@ -197,15 +185,9 @@ func (me *MyWindow) events() {
 		}
 
 		var selected []selectedEpisode
-		for i, chk := range me.episodeChks {
-			if i >= len(me.currentInfo.Episodes) {
-				break
-			}
-			if chk.IsChecked() {
-				selected = append(selected, selectedEpisode{
-					number: i + 1,
-					ep:     me.currentInfo.Episodes[i],
-				})
+		for i, ep := range me.currentInfo.Episodes {
+			if isListViewItemChecked(me.lvEpisodes, i) {
+				selected = append(selected, selectedEpisode{number: i + 1, ep: ep})
 			}
 		}
 		if len(selected) == 0 {
@@ -273,15 +255,12 @@ func (me *MyWindow) loadResultsList(label string, fetch func() ([]extractor.Simp
 	}()
 }
 
-// loadAnimeDetails runs fetch (ext.GetAnimeDetailsHref or
-// ext.GetAnimeDetails) in the background, downloads the poster alongside
-// it, decodes the poster via WIC once back on the UI thread (WIC needs the
-// COM apartment that only this thread has — see thumbnail.go), and
-// updates the whole right-hand workspace. Shared between the URL/Load
-// button and double-clicking a sidebar result so that logic only lives in
-// one place.
+// loadAnimeDetails runs fetch (ext.GetAnimeDetails, from a sidebar
+// double-click) in the background, downloads the poster alongside it,
+// decodes the poster via WIC once back on the UI thread (WIC needs the COM
+// apartment that only this thread has — see thumbnail.go), and updates the
+// whole right-hand workspace.
 func (me *MyWindow) loadAnimeDetails(fetch func() (*extractor.AnimeDetail, error)) {
-	me.btnLoadURL.Hwnd().EnableWindow(false)
 	setStatic(me.lblStatus, "Loading...")
 
 	go func() {
@@ -297,8 +276,6 @@ func (me *MyWindow) loadAnimeDetails(fetch func() (*extractor.AnimeDetail, error
 		}
 
 		me.wnd.UiThread(func() {
-			me.btnLoadURL.Hwnd().EnableWindow(true)
-
 			if err != nil {
 				setStatic(me.lblStatus, "Error: "+err.Error())
 				return
@@ -324,11 +301,7 @@ func (me *MyWindow) loadAnimeDetails(fetch func() (*extractor.AnimeDetail, error
 			setStatic(me.lblRating, fmt.Sprintf("Rating: %.1f", info.Rating))
 			setStatic(me.lblStats, fmt.Sprintf("Episodes: %s   Views: %s", info.TotalEpisodes, info.Views))
 
-			n := len(info.Episodes)
-			if n > MaxEpisodeSlots {
-				n = MaxEpisodeSlots
-			}
-			me.setEpisodeCount(n)
+			me.setEpisodes(info.Episodes)
 
 			setStatic(me.lblStatus, fmt.Sprintf("Loaded. %d episode(s) found.", len(info.Episodes)))
 		})
