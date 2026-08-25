@@ -26,6 +26,7 @@ type AnimeDetail struct {
 	Title         string    `json:"title"`
 	Subtitle      string    `json:"subtitle"`
 	Description   string    `json:"description"`
+	Thumbnail     string    `json:"thumbnail"`
 	Rating        float64   `json:"rating"`
 	Href          string    `json:"href"`
 	TotalEpisodes string    `json:"total_episodes"`

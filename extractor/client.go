@@ -126,6 +126,11 @@ func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {
 	return movies, nil
 }
 
+func (ex *AniVietSubExtractor) GetAnimeDetailsHref(href string) (*AnimeDetail, error) {
+	id := extractLargestNumber(href)
+	return ex.GetAnimeDetails(id)
+}
+
 func (ex *AniVietSubExtractor) GetAnimeDetails(id int) (*AnimeDetail, error) {
 	u := mustJoinPath(ex.domain, "phim", fmt.Sprintf("-%d", id), "xem-phim.html")
 

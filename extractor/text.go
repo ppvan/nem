@@ -216,6 +216,7 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
 	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
 	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
+	thumbnail := strings.TrimSpace(articleTag.Find("div.Image img").AttrOr("src", "N/A"))
 
 	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
 	var rating float64
@@ -228,6 +229,7 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 		Title:         title,
 		Subtitle:      subtitle,
 		Description:   description,
+		Thumbnail:     thumbnail,
 		Rating:        rating,
 		Href:          href,
 		TotalEpisodes: accessTime,

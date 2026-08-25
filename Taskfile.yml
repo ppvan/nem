@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   BINARY_NAME: nem.exe
-  CMD_PATH: ./cmd/cli
+  CMD_PATH: ./app
 
 tasks:
   default:
@@ -10,12 +10,12 @@ tasks:
     deps: [build]
 
   build:
-    desc: Build the binary
+    desc: Build the GUI binary (no console window, stripped, trimmed paths)
     cmds:
-      - go build -o {{.BINARY_NAME}} {{.CMD_PATH}}
+      - go build -trimpath -ldflags "-s -w -H=windowsgui" -o {{.BINARY_NAME}} {{.CMD_PATH}}
 
   run:
-    desc: Run the application
+    desc: Run the application (keeps a console window attached for debug output)
     cmds:
       - go run {{.CMD_PATH}}
 
@@ -23,6 +23,14 @@ tasks:
     desc: Format Go code
     cmds:
       - go fmt ./...
+
+  winres:
+    desc: Compile windows resources
+    dir: app
+    cmds:
+      - go-winres.exe make
+    sources:
+      - app/winres/**/*
 
   clean:
     desc: Remove build artifacts
