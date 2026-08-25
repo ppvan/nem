@@ -1,32 +1,10 @@
-# NEM - Anime Downloader CLI
+# NEM - Anime Downloader App
 
 
-NEM is a powerful CLI application for anime enthusiasts. It supports searching for anime titles, retrieving detailed information about anime series and episodes, and downloading episodes in various formats including M3U8 playlists.
+NEM is a powerful GUI application for anime enthusiasts. It supports searching for anime titles, retrieving detailed information about anime series and episodes, and downloading episodes in various formats including M3U8 playlists.
 
-![preview](https://github.com/user-attachments/assets/b6f81215-7d2c-4074-b02a-9c042ffda835)
+<img width="1944" height="1290" alt="image" src="https://github.com/user-attachments/assets/60e5da81-74c3-4eec-a74d-aac0ca0e2836" />
 
-
-
-## Usage
-```sh
- .\nem.exe
-NAME:
-   nem - Anime downloader CLI
-
-USAGE:
-   nem [global options] [command [command options]]
-
-COMMANDS:
-   search    Search anime by title
-   details   Get anime details
-   episodes  List episodes for anime
-   download  Download anime episode
-   playlist  Get M3U8 playlist
-   help, h   Shows a list of commands or help for one command
-
-GLOBAL OPTIONS:
-   --help, -h                  show help
-```
 
 ## Installation
 
