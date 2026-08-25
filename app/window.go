@@ -6,6 +6,7 @@ import (
 	"github.com/ppvan/nem/extractor"
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/ui"
+	"github.com/rodrigocfd/windigo/win"
 )
 
 // MaxEpisodeSlots is the number of checkbox slots pre-built in the UI.
@@ -51,9 +52,10 @@ type MyWindow struct {
 	lblStatus   *ui.Static
 
 	// State
-	ext           *extractor.AniVietSubExtractor
-	thumbnailData []byte                 // BMP-encoded poster bytes once fetched+converted (nil = placeholder); see fetchThumbnailBitmap in backend.go
-	currentInfo   *extractor.AnimeDetail // last fetched anime info; nil until first successful search
+	ext             *extractor.AniVietSubExtractor
+	thumbnailPixels []byte                 // decoded top-down 32bpp BGR pixels (nil = show placeholder); see thumbnail.go
+	thumbnailSize   win.SIZE               // pixel dimensions matching thumbnailPixels
+	currentInfo     *extractor.AnimeDetail // last fetched anime info; nil until first successful search
 }
 
 func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {

@@ -7,7 +7,6 @@ import (
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/x/cosh"
-	"github.com/rodrigocfd/windigo/x/winaut"
 	"github.com/rodrigocfd/windigo/x/winsh"
 )
 
@@ -27,54 +26,47 @@ func (me *MyWindow) events() {
 		defer bgBrush.DeleteObject()
 		hdc.FillRect(&ps.RcPaint, bgBrush)
 
-		if me.thumbnailData == nil {
+		if me.thumbnailPixels == nil {
 			_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
 			_, _ = hdc.DrawText("No thumbnail", &ps.RcPaint,
 				co.DT_CENTER|co.DT_VCENTER|co.DT_SINGLELINE)
 			return
 		}
 
-		rel := win.NewOleReleaser()
-		defer rel.Release() // important: release your COM resources to avoid leaks
+		// Pure GDI from here — no COM, no HBITMAP. me.thumbnailPixels was
+		// already decoded once (via WIC, see thumbnail.go) when the search
+		// completed, so painting is just a raw memory blit.
+		var bi win.BITMAPINFO
+		bi.BmiHeader.Width = me.thumbnailSize.Cx
+		bi.BmiHeader.Height = -me.thumbnailSize.Cy // negative = top-down, matching WIC's row order
+		bi.BmiHeader.Planes = 1
+		bi.BmiHeader.BitCount = co.BITCOUNT_32
+		bi.BmiHeader.Compression = co.BI_RGB
+		bi.BmiHeader.SetBiSize()
 
-		// SHCreateMemStream projects the IStream directly over
-		// me.thumbnailData's backing array (no copy), so per windigo's own
-		// docs the slice must stay reachable for the syscall's duration.
-		// It's already referenced by the me struct so the GC won't collect
-		// it mid-call, but KeepAlive makes that guarantee explicit.
-		defer runtime.KeepAlive(me.thumbnailData)
-		stream, err := winsh.SHCreateMemStream(rel, me.thumbnailData)
-		if err != nil {
-			_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
-			_, _ = hdc.DrawText("Thumbnail error", &ps.RcPaint,
-				co.DT_CENTER|co.DT_VCENTER|co.DT_SINGLELINE)
-			return
-		}
+		// StretchDIBits reads directly from the slice passed via pointer,
+		// so keep it alive through the syscall (see the KeepAlive note in
+		// thumbnail.go for the same reasoning).
+		defer runtime.KeepAlive(me.thumbnailPixels)
 
-		// windigo's OleLoadPicture documents JPEG as supported, but it
-		// doesn't actually render JPEGs in practice — see
-		// https://github.com/rodrigocfd/windigo/issues/46. me.thumbnailData
-		// is therefore already BMP-encoded by the time it gets here (see
-		// fetchThumbnailBitmap in backend.go), not the raw downloaded JPEG.
-		pic, err := winaut.OleLoadPicture(rel, stream, 0, true)
-		if err != nil {
-			_, _ = hdc.SetBkMode(co.BKMODE_TRANSPARENT)
-			_, _ = hdc.DrawText("Thumbnail error", &ps.RcPaint,
-				co.DT_CENTER|co.DT_VCENTER|co.DT_SINGLELINE)
-			return
-		}
+		// object-fit: cover — crop a centered region of the source that
+		// matches the destination box's aspect ratio, then stretch that
+		// crop to fill the box completely (accepting some cropping)
+		// instead of stretching the whole uncropped source and distorting
+		// it. bi above still describes the full decoded image; only the
+		// source rectangle passed to StretchDIBits changes.
+		dstW, dstH := ps.RcPaint.Right, ps.RcPaint.Bottom
+		srcX, srcY, srcW, srcH := coverSourceRect(me.thumbnailSize.Cx, me.thumbnailSize.Cy, dstW, dstH)
 
-		// Stretches to fill the control, same as vye's QR code rendering.
-		// Posters are usually portrait (~2:3) and the thumbnail box here
-		// is 160x200 (4:5), so there's a small amount of visible stretch —
-		// good enough for a first pass; letterboxing to preserve aspect
-		// ratio would be the next improvement.
-		sz, _ := pic.Size()
-		_, _ = pic.Render(hdc,
+		_, _ = hdc.StretchDIBits(
 			win.POINT{},
-			win.SIZE{Cx: ps.RcPaint.Right, Cy: ps.RcPaint.Bottom},
-			win.POINT{X: 0, Y: sz.Cy},
-			win.SIZE{Cx: sz.Cx, Cy: -sz.Cy},
+			win.SIZE{Cx: dstW, Cy: dstH},
+			win.POINT{X: srcX, Y: srcY},
+			win.SIZE{Cx: srcW, Cy: srcH},
+			&me.thumbnailPixels[0],
+			&bi,
+			co.DIB_COLORS_RGB,
+			co.ROP_SRCCOPY,
 		)
 	})
 
@@ -90,13 +82,13 @@ func (me *MyWindow) events() {
 		go func() {
 			info, err := me.ext.GetAnimeDetailsHref(url)
 
-			// Best-effort: fetch + convert the poster alongside the search
-			// itself so it's ready by the time we update the UI. A
-			// thumbnail failure shouldn't fail the whole search — just
-			// falls back to the "No thumbnail" placeholder.
-			var thumbData []byte
+			// Best-effort: fetch the poster's raw bytes alongside the
+			// search itself so they're ready by the time we hop to the UI
+			// thread. Plain HTTP GET, no COM involved, so this is safe to
+			// do from a bare goroutine (unlike the decode step below).
+			var jpegData []byte
 			if err == nil {
-				thumbData, _ = fetchThumbnailBitmap(info.Thumbnail)
+				jpegData, _ = fetchThumbnail(info.Thumbnail)
 			}
 
 			me.wnd.UiThread(func() {
@@ -109,13 +101,21 @@ func (me *MyWindow) events() {
 				}
 
 				me.currentInfo = info
-				me.thumbnailData = thumbData
+
+				// WIC decoding needs COM, which is only initialized on
+				// this (UI) thread — that's why it happens here rather
+				// than alongside the HTTP fetch above. A thumbnail
+				// failure doesn't fail the search; it just leaves the
+				// "No thumbnail" placeholder up.
+				me.thumbnailPixels = nil
+				me.thumbnailSize = win.SIZE{}
+				if pixels, sz, derr := decodeJpegPixels(jpegData); derr == nil {
+					me.thumbnailPixels = pixels
+					me.thumbnailSize = sz
+				}
 				me.thumbnail.Hwnd().RedrawWindow(nil, 0, co.RDW_INVALIDATE)
 
 				title := info.Title
-				if info.Subtitle != "" {
-					title += " - " + info.Subtitle
-				}
 				setStatic(me.lblTitle, title)
 				me.edtDesc.SetText(info.Description)
 				setStatic(me.lblRating, fmt.Sprintf("Rating: %.1f", info.Rating))
