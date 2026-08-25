@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"runtime"
 
 	"github.com/ppvan/nem/extractor"
@@ -11,6 +10,10 @@ import (
 
 const appTitle = "Anime Downloader"
 
+// TODO: make this configurable (a settings field, env var, flag, etc.)
+// instead of hardcoding a single site.
+const animeDomain = "https://animevietsub.work"
+
 func main() {
 	runtime.LockOSThread() // Windows GUI must run on the OS thread
 
@@ -18,10 +21,17 @@ func main() {
 	_, _ = win.CoInitializeEx(co.COINIT_APARTMENTTHREADED | co.COINIT_DISABLE_OLE1DDE)
 	defer win.CoUninitialize()
 
-	ext, err := extractor.NewAniVietSubExtractor("https://animevietsub.work")
+	// Built once and reused for the whole app session (rather than per
+	// search) so we don't pay for TLS client setup / warmUp() on every
+	// click.
+	ext, err := extractor.NewAniVietSubExtractor(animeDomain)
 	if err != nil {
-		msg := fmt.Errorf("extractor init: %w", err)
-		panic(msg)
+		// A windowsgui build has no console attached, so surface startup
+		// failures with a message box instead of printing to stderr.
+		win.HWND(0).MessageBox(
+			"Failed to initialize extractor:\n"+err.Error(),
+			appTitle, co.MB_ICONERROR)
+		return
 	}
 
 	ShowMainWindow(ext)

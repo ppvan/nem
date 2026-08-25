@@ -16,12 +16,27 @@ import (
 // anime with more episodes than fit here.
 const MaxEpisodeSlots = 30
 
-// Grid layout for the fixed episode-checkbox pool.
+// Overall two-column layout, modeled after Free Manga Downloader's
+// sidebar-catalog + main-workspace structure: a left sidebar for
+// browsing/searching the catalog, and a right workspace for the selected
+// title's details, episode selection, and download controls.
+const (
+	winWidth  = 970
+	winHeight = 615
+
+	sidebarX = 10
+	sidebarW = 230 // sidebar controls span x=10..240
+
+	rightX = 255 // 15px gutter after the sidebar
+	rightW = 700 // 255..955, leaving a 15px right margin
+)
+
+// Grid layout for the fixed episode-checkbox pool, sized to rightW.
 const (
 	epColCount  = 5
-	epColWidth  = 148
+	epColWidth  = rightW / epColCount // 140
 	epRowHeight = 26
-	epGridX     = 15
+	epGridX     = rightX
 	epGridY     = 285
 )
 
@@ -29,33 +44,44 @@ const (
 type MyWindow struct {
 	wnd *ui.Main
 
-	// Search bar
-	lblURL    *ui.Static
-	edtURL    *ui.Edit
-	btnSearch *ui.Button
+	// Left sidebar: catalog browsing
+	edtSidebarSearch *ui.Edit
+	btnSidebarSearch *ui.Button
+	btnTrending      *ui.Button
+	lvResults        *ui.ListView
+	lblSidebarStatus *ui.Static
 
-	// Info block
-	thumbnail *ui.Control // custom-painted placeholder for the cover image
-	lblTitle  *ui.Static
-	edtDesc   *ui.Edit
-	lblRating *ui.Static
+	// Right workspace: URL/Load row
+	lblURL     *ui.Static
+	edtURL     *ui.Edit
+	btnLoadURL *ui.Button
 
-	// Episodes
-	lblEpisodes *ui.Static
-	episodeChks [MaxEpisodeSlots]*ui.CheckBox
+	// Right workspace: info block
+	thumbnail   *ui.Control // custom-painted cover image
+	lblTitle    *ui.Static
+	lblSubtitle *ui.Static
+	lblRating   *ui.Static
+	lblStats    *ui.Static // views + total episodes
+	edtDesc     *ui.Edit
 
-	// Bottom bar
-	lblPath     *ui.Static
-	edtPath     *ui.Edit
-	btnBrowse   *ui.Button
-	btnDownload *ui.Button
-	lblStatus   *ui.Static
+	// Right workspace: episodes
+	lblEpisodes  *ui.Static
+	btnSelectAll *ui.Button
+	episodeChks  [MaxEpisodeSlots]*ui.CheckBox
+
+	// Right workspace: destination + actions
+	lblPath        *ui.Static
+	edtPath        *ui.Edit
+	btnBrowse      *ui.Button
+	btnOpenBrowser *ui.Button
+	btnDownload    *ui.Button
+	lblStatus      *ui.Static
 
 	// State
 	ext             *extractor.AniVietSubExtractor
 	thumbnailPixels []byte                 // decoded top-down 32bpp BGR pixels (nil = show placeholder); see thumbnail.go
 	thumbnailSize   win.SIZE               // pixel dimensions matching thumbnailPixels
-	currentInfo     *extractor.AnimeDetail // last fetched anime info; nil until first successful search
+	currentInfo     *extractor.AnimeDetail // last loaded anime info; nil until first successful load
 }
 
 func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
@@ -63,7 +89,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		ui.OptsMain().
 			Title(appTitle).
 			Center(true).
-			Size(ui.Dpi(780, 560)),
+			Size(ui.Dpi(winWidth, winHeight)),
 		// No ClassIconId() here: that requires an icon resource compiled
 		// into the .exe (via a .syso resource file, like windigo's own
 		// examples ship). Without one, loading it panics with "the
@@ -71,54 +97,104 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		// Add a .syso + ClassIconId(...) later if you want a custom icon.
 	)
 
-	// --- Search bar -----------------------------------------------------
+	// --- Left sidebar: catalog browsing -----------------------------------
+
+	edtSidebarSearch := ui.NewEdit(wnd, ui.OptsEdit().
+		Position(ui.Dpi(sidebarX, 35)).
+		Width(ui.DpiX(150)),
+	)
+	btnSidebarSearch := ui.NewButton(wnd, ui.OptsButton().
+		Text("Search").
+		Position(ui.Dpi(sidebarX+160, 34)).
+		Width(ui.DpiX(70)).
+		Height(ui.DpiY(26)),
+	)
+	btnTrending := ui.NewButton(wnd, ui.OptsButton().
+		Text("Trending").
+		Position(ui.Dpi(sidebarX, 65)).
+		Width(ui.DpiX(sidebarW)).
+		Height(ui.DpiY(24)),
+	)
+	lvResults := ui.NewListView(wnd, ui.OptsListView().
+		Position(ui.Dpi(sidebarX, 95)).
+		Size(ui.Dpi(sidebarW, 480)).
+		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SINGLESEL|co.LVS_SHOWSELALWAYS).
+		CtrlExStyle(co.LVS_EX_FULLROWSELECT).
+		Column("Title", ui.DpiX(sidebarW-4)),
+	)
+	lblSidebarStatus := ui.NewStatic(wnd, ui.OptsStatic().
+		Text("").
+		Position(ui.Dpi(sidebarX, 580)).
+		Size(ui.Dpi(sidebarW, 20)),
+	)
+
+	// --- Right workspace: URL/Load row -------------------------------------
 
 	lblURL := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("URL:").
-		Position(ui.Dpi(15, 18)).
+		Position(ui.Dpi(rightX, 15)).
 		Size(ui.Dpi(35, 20)),
 	)
 	edtURL := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(55, 15)).
-		Width(ui.DpiX(595)),
+		Position(ui.Dpi(rightX+40, 12)).
+		Width(ui.DpiX(565)),
 	)
-	btnSearch := ui.NewButton(wnd, ui.OptsButton().
-		Text("Search").
-		Position(ui.Dpi(655, 14)).
-		Width(ui.DpiX(90)).
+	btnLoadURL := ui.NewButton(wnd, ui.OptsButton().
+		Text("Load").
+		Position(ui.Dpi(rightX+615, 11)).
+		Width(ui.DpiX(85)).
 		Height(ui.DpiY(26)),
 	)
 
-	// --- Info block: left = thumbnail, right = title/description/rating -
+	// --- Right workspace: info block ---------------------------------------
 
 	thumbnail := ui.NewControl(wnd, ui.OptsControl().
-		Position(ui.Dpi(15, 50)).
+		Position(ui.Dpi(rightX, 50)).
 		Size(ui.Dpi(160, 200)),
 	)
 
+	metaX := rightX + 175
+	metaW := rightW - 175
+
 	lblTitle := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Title will appear here").
-		Position(ui.Dpi(190, 50)).
-		Size(ui.Dpi(555, 24)),
+		Position(ui.Dpi(metaX, 50)).
+		Size(ui.Dpi(metaW, 22)),
 	)
-	edtDesc := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(190, 80)).
-		Width(ui.DpiX(555)).
-		Height(ui.DpiY(130)).
-		CtrlStyle(co.ES_MULTILINE|co.ES_LEFT|co.ES_AUTOVSCROLL|co.ES_READONLY),
+	lblSubtitle := ui.NewStatic(wnd, ui.OptsStatic().
+		Text("").
+		Position(ui.Dpi(metaX, 74)).
+		Size(ui.Dpi(metaW, 20)),
 	)
 	lblRating := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Rating: —").
-		Position(ui.Dpi(190, 218)).
-		Size(ui.Dpi(555, 20)),
+		Position(ui.Dpi(metaX, 96)).
+		Size(ui.Dpi(metaW, 20)),
+	)
+	lblStats := ui.NewStatic(wnd, ui.OptsStatic().
+		Text("").
+		Position(ui.Dpi(metaX, 118)).
+		Size(ui.Dpi(metaW, 20)),
+	)
+	edtDesc := ui.NewEdit(wnd, ui.OptsEdit().
+		Position(ui.Dpi(metaX, 142)).
+		Width(ui.DpiX(metaW)).
+		Height(ui.DpiY(108)).
+		CtrlStyle(co.ES_MULTILINE|co.ES_LEFT|co.ES_AUTOVSCROLL|co.ES_READONLY),
 	)
 
-	// --- Episodes ---------------------------------------------------------
+	// --- Right workspace: episodes ------------------------------------------
 
 	lblEpisodes := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Episodes:").
-		Position(ui.Dpi(15, 260)).
-		Size(ui.Dpi(200, 20)),
+		Position(ui.Dpi(rightX, 260)).
+		Size(ui.Dpi(150, 20)),
+	)
+	btnSelectAll := ui.NewButton(wnd, ui.OptsButton().
+		Text("Select All").
+		Position(ui.Dpi(rightX+rightW-100, 257)).
+		Width(ui.DpiX(100)).
+		Height(ui.DpiY(24)),
 	)
 
 	var episodeChks [MaxEpisodeSlots]*ui.CheckBox
@@ -136,63 +212,81 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		episodeChks[i] = chk
 	}
 
-	// --- Bottom bar: destination path + download -------------------------
+	// --- Right workspace: destination + actions -----------------------------
 
 	lblPath := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Save to:").
-		Position(ui.Dpi(15, 478)).
+		Position(ui.Dpi(rightX, 453)).
 		Size(ui.Dpi(60, 20)),
 	)
 	edtPath := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(80, 475)).
-		Width(ui.DpiX(490)),
+		Position(ui.Dpi(rightX+65, 450)).
+		Width(ui.DpiX(540)),
 	)
 	btnBrowse := ui.NewButton(wnd, ui.OptsButton().
 		Text("Browse...").
-		Position(ui.Dpi(580, 474)).
+		Position(ui.Dpi(rightX+610, 449)).
 		Width(ui.DpiX(85)).
 		Height(ui.DpiY(26)),
+	)
+	btnOpenBrowser := ui.NewButton(wnd, ui.OptsButton().
+		Text("Open in Browser").
+		Position(ui.Dpi(rightX, 484)).
+		Width(ui.DpiX(150)).
+		Height(ui.DpiY(28)),
 	)
 	btnDownload := ui.NewButton(wnd, ui.OptsButton().
 		Text("Download").
-		Position(ui.Dpi(670, 474)).
-		Width(ui.DpiX(85)).
-		Height(ui.DpiY(26)),
+		Position(ui.Dpi(rightX+rightW-150, 484)).
+		Width(ui.DpiX(150)).
+		Height(ui.DpiY(28)),
 	)
 	lblStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(15, 510)).
-		Size(ui.Dpi(740, 20)),
+		Position(ui.Dpi(rightX, 522)).
+		Size(ui.Dpi(rightW, 20)),
 	)
 
 	me := &MyWindow{
 		wnd: wnd,
 		ext: ext,
 
-		lblURL:    lblURL,
-		edtURL:    edtURL,
-		btnSearch: btnSearch,
+		edtSidebarSearch: edtSidebarSearch,
+		btnSidebarSearch: btnSidebarSearch,
+		btnTrending:      btnTrending,
+		lvResults:        lvResults,
+		lblSidebarStatus: lblSidebarStatus,
 
-		thumbnail: thumbnail,
-		lblTitle:  lblTitle,
-		edtDesc:   edtDesc,
-		lblRating: lblRating,
+		lblURL:     lblURL,
+		edtURL:     edtURL,
+		btnLoadURL: btnLoadURL,
 
-		lblEpisodes: lblEpisodes,
-		episodeChks: episodeChks,
+		thumbnail:   thumbnail,
+		lblTitle:    lblTitle,
+		lblSubtitle: lblSubtitle,
+		lblRating:   lblRating,
+		lblStats:    lblStats,
+		edtDesc:     edtDesc,
 
-		lblPath:     lblPath,
-		edtPath:     edtPath,
-		btnBrowse:   btnBrowse,
-		btnDownload: btnDownload,
-		lblStatus:   lblStatus,
+		lblEpisodes:  lblEpisodes,
+		btnSelectAll: btnSelectAll,
+		episodeChks:  episodeChks,
+
+		lblPath:        lblPath,
+		edtPath:        edtPath,
+		btnBrowse:      btnBrowse,
+		btnOpenBrowser: btnOpenBrowser,
+		btnDownload:    btnDownload,
+		lblStatus:      lblStatus,
 	}
 
 	// All child controls get their real HWNDs during WM_CREATE, in the
 	// order they were registered above. Hide the unused episode checkbox
-	// slots only once that has happened.
+	// slots, and kick off an initial Trending() load for the sidebar, only
+	// once that has happened.
 	wnd.On().WmCreate(func(_ ui.WmCreate) int {
 		me.setEpisodeCount(0)
+		me.loadResultsList("Trending", me.ext.Trending)
 		return 0
 	})
 

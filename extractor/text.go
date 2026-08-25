@@ -137,7 +137,7 @@ func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 		return nil, err
 	}
 	movies := []SimpleAnime{}
-	doc.Find("li:not(.ss-bottom)").Each(func(i int, s *goquery.Selection) {
+	doc.Find("li").Each(func(i int, s *goquery.Selection) {
 		title := s.Find(".ss-title").Text()
 		href := s.Find(".ss-title").AttrOr("href", "")
 		movies = append(movies, SimpleAnime{

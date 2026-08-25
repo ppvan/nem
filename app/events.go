@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/ppvan/nem/extractor"
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
 	"github.com/rodrigocfd/windigo/x/cosh"
@@ -12,7 +13,7 @@ import (
 
 func (me *MyWindow) events() {
 
-	// --- Thumbnail placeholder paint ------------------------------------
+	// --- Thumbnail paint --------------------------------------------------
 
 	me.thumbnail.On().WmPaint(func() {
 		var ps win.PAINTSTRUCT
@@ -34,7 +35,7 @@ func (me *MyWindow) events() {
 		}
 
 		// Pure GDI from here — no COM, no HBITMAP. me.thumbnailPixels was
-		// already decoded once (via WIC, see thumbnail.go) when the search
+		// already decoded once (via WIC, see thumbnail.go) when the load
 		// completed, so painting is just a raw memory blit.
 		var bi win.BITMAPINFO
 		bi.BmiHeader.Width = me.thumbnailSize.Cx
@@ -70,66 +71,72 @@ func (me *MyWindow) events() {
 		)
 	})
 
-	// --- Search ------------------------------------------------------------
+	// --- Sidebar: search the catalog ---------------------------------------
 
-	me.btnSearch.On().BnClicked(func() {
+	me.btnSidebarSearch.On().BnClicked(func() {
+		query := me.edtSidebarSearch.Text()
+		if query == "" {
+			setStatic(me.lblSidebarStatus, "Type something to search.")
+			return
+		}
+		me.loadResultsList(fmt.Sprintf("%q", query), func() ([]extractor.SimpleAnime, error) {
+			return me.ext.Search(query)
+		})
+	})
+
+	// --- Sidebar: trending -------------------------------------------------
+
+	me.btnTrending.On().BnClicked(func() {
+		me.loadResultsList("Trending", me.ext.Trending)
+	})
+
+	// --- Sidebar: double-click a result to load its details ---------------
+
+	me.lvResults.On().NmDblClk(func(p *win.NMITEMACTIVATE) {
+		if p.IItem < 0 {
+			return
+		}
+		sa, ok := me.lvResults.Item(int(p.IItem)).Data().(extractor.SimpleAnime)
+		if !ok {
+			return
+		}
+		me.edtURL.SetText(sa.Href)
+		me.loadAnimeDetails(func() (*extractor.AnimeDetail, error) {
+			return me.ext.GetAnimeDetails(sa.Id)
+		})
+	})
+
+	// --- Load by URL ---------------------------------------------------------
+
+	me.btnLoadURL.On().BnClicked(func() {
 		url := me.edtURL.Text()
+		me.loadAnimeDetails(func() (*extractor.AnimeDetail, error) {
+			return me.ext.GetAnimeDetailsHref(url)
+		})
+	})
 
-		me.btnSearch.Hwnd().EnableWindow(false)
-		me.btnSearch.SetText("Searching...")
-		setStatic(me.lblStatus, "")
+	// --- Select all / none episodes -----------------------------------------
 
-		go func() {
-			info, err := me.ext.GetAnimeDetailsHref(url)
+	me.btnSelectAll.On().BnClicked(func() {
+		if me.currentInfo == nil {
+			return
+		}
+		n := len(me.currentInfo.Episodes)
+		if n > MaxEpisodeSlots {
+			n = MaxEpisodeSlots
+		}
 
-			// Best-effort: fetch the poster's raw bytes alongside the
-			// search itself so they're ready by the time we hop to the UI
-			// thread. Plain HTTP GET, no COM involved, so this is safe to
-			// do from a bare goroutine (unlike the decode step below).
-			var jpegData []byte
-			if err == nil {
-				jpegData, _ = fetchThumbnail(info.Thumbnail)
+		allChecked := true
+		for i := 0; i < n; i++ {
+			if !me.episodeChks[i].IsChecked() {
+				allChecked = false
+				break
 			}
+		}
 
-			me.wnd.UiThread(func() {
-				me.btnSearch.Hwnd().EnableWindow(true)
-				me.btnSearch.SetText("Search")
-
-				if err != nil {
-					setStatic(me.lblStatus, "Error: "+err.Error())
-					return
-				}
-
-				me.currentInfo = info
-
-				// WIC decoding needs COM, which is only initialized on
-				// this (UI) thread — that's why it happens here rather
-				// than alongside the HTTP fetch above. A thumbnail
-				// failure doesn't fail the search; it just leaves the
-				// "No thumbnail" placeholder up.
-				me.thumbnailPixels = nil
-				me.thumbnailSize = win.SIZE{}
-				if pixels, sz, derr := decodeJpegPixels(jpegData); derr == nil {
-					me.thumbnailPixels = pixels
-					me.thumbnailSize = sz
-				}
-				me.thumbnail.Hwnd().RedrawWindow(nil, 0, co.RDW_INVALIDATE)
-
-				title := info.Title
-				setStatic(me.lblTitle, title)
-				me.edtDesc.SetText(info.Description)
-				setStatic(me.lblRating, fmt.Sprintf("Rating: %.1f", info.Rating))
-
-				n := len(info.Episodes)
-				if n > MaxEpisodeSlots {
-					n = MaxEpisodeSlots
-				}
-				me.setEpisodeCount(n)
-
-				setStatic(me.lblStatus, fmt.Sprintf("Found %d episode(s). Views: %s",
-					len(info.Episodes), info.Views))
-			})
-		}()
+		for i := 0; i < n; i++ {
+			me.episodeChks[i].SetCheck(!allChecked)
+		}
 	})
 
 	// --- Browse for destination folder --------------------------------
@@ -163,11 +170,23 @@ func (me *MyWindow) events() {
 		}
 	})
 
+	// --- Open the current anime's page in the default browser -------------
+
+	me.btnOpenBrowser.On().BnClicked(func() {
+		if me.currentInfo == nil || me.currentInfo.Href == "" {
+			setStatic(me.lblStatus, "Load an anime first.")
+			return
+		}
+		if err := openInBrowser(me.currentInfo.Href); err != nil {
+			setStatic(me.lblStatus, "Couldn't open browser: "+err.Error())
+		}
+	})
+
 	// --- Download selected episodes -------------------------------------
 
 	me.btnDownload.On().BnClicked(func() {
 		if me.currentInfo == nil {
-			setStatic(me.lblStatus, "Search for an anime first.")
+			setStatic(me.lblStatus, "Load an anime first.")
 			return
 		}
 
@@ -226,4 +245,92 @@ func (me *MyWindow) events() {
 			})
 		}()
 	})
+}
+
+// loadResultsList runs fetch (ext.Search or ext.Trending) in the
+// background and populates the sidebar list view with the results. Safe
+// to call from the UI thread (e.g. a button click) — it hops to a
+// goroutine itself, since the HTTP work involved is a plain network call
+// with no COM/GDI, unlike loadAnimeDetails' thumbnail step below.
+func (me *MyWindow) loadResultsList(label string, fetch func() ([]extractor.SimpleAnime, error)) {
+	setStatic(me.lblSidebarStatus, "Loading "+label+"...")
+
+	go func() {
+		results, err := fetch()
+
+		me.wnd.UiThread(func() {
+			if err != nil {
+				setStatic(me.lblSidebarStatus, "Error: "+err.Error())
+				return
+			}
+
+			me.lvResults.DeleteAllItems()
+			for _, sa := range results {
+				me.lvResults.AddItem(sa.Title).SetData(sa)
+			}
+			setStatic(me.lblSidebarStatus, fmt.Sprintf("%s: %d result(s)", label, len(results)))
+		})
+	}()
+}
+
+// loadAnimeDetails runs fetch (ext.GetAnimeDetailsHref or
+// ext.GetAnimeDetails) in the background, downloads the poster alongside
+// it, decodes the poster via WIC once back on the UI thread (WIC needs the
+// COM apartment that only this thread has — see thumbnail.go), and
+// updates the whole right-hand workspace. Shared between the URL/Load
+// button and double-clicking a sidebar result so that logic only lives in
+// one place.
+func (me *MyWindow) loadAnimeDetails(fetch func() (*extractor.AnimeDetail, error)) {
+	me.btnLoadURL.Hwnd().EnableWindow(false)
+	setStatic(me.lblStatus, "Loading...")
+
+	go func() {
+		info, err := fetch()
+
+		// Best-effort: fetch the poster's raw bytes alongside the details
+		// themselves so they're ready by the time we hop to the UI thread.
+		// Plain HTTP GET, no COM involved, so safe from a bare goroutine
+		// (unlike the decode step below).
+		var jpegData []byte
+		if err == nil {
+			jpegData, _ = fetchThumbnail(info.Thumbnail)
+		}
+
+		me.wnd.UiThread(func() {
+			me.btnLoadURL.Hwnd().EnableWindow(true)
+
+			if err != nil {
+				setStatic(me.lblStatus, "Error: "+err.Error())
+				return
+			}
+
+			me.currentInfo = info
+
+			// WIC decoding needs COM, which is only initialized on this
+			// (UI) thread — that's why it happens here rather than
+			// alongside the HTTP fetch above. A thumbnail failure doesn't
+			// fail the load; it just leaves the "No thumbnail" placeholder up.
+			me.thumbnailPixels = nil
+			me.thumbnailSize = win.SIZE{}
+			if pixels, sz, derr := decodeJpegPixels(jpegData); derr == nil {
+				me.thumbnailPixels = pixels
+				me.thumbnailSize = sz
+			}
+			me.thumbnail.Hwnd().RedrawWindow(nil, 0, co.RDW_INVALIDATE)
+
+			setStatic(me.lblTitle, info.Title)
+			setStatic(me.lblSubtitle, info.Subtitle)
+			me.edtDesc.SetText(info.Description)
+			setStatic(me.lblRating, fmt.Sprintf("Rating: %.1f", info.Rating))
+			setStatic(me.lblStats, fmt.Sprintf("Episodes: %s   Views: %s", info.TotalEpisodes, info.Views))
+
+			n := len(info.Episodes)
+			if n > MaxEpisodeSlots {
+				n = MaxEpisodeSlots
+			}
+			me.setEpisodeCount(n)
+
+			setStatic(me.lblStatus, fmt.Sprintf("Loaded. %d episode(s) found.", len(info.Episodes)))
+		})
+	}()
 }

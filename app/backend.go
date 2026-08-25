@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +15,17 @@ import (
 )
 
 const thumbnailFetchTimeout = 10 * time.Second
+
+// openInBrowser launches url in the OS default browser. Uses the standard
+// rundll32 trick (delegates to the shell's URL file-association handler)
+// rather than a third-party package, since it's one line of stdlib
+// os/exec and needs no extra dependency.
+func openInBrowser(url string) error {
+	if url == "" {
+		return fmt.Errorf("no URL to open")
+	}
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
 
 // fetchThumbnail downloads the raw poster image bytes for AnimeDetail's
 // Thumbnail URL (a plain .jpg link). Returns (nil, nil) if url is empty —

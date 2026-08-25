@@ -108,7 +108,7 @@ func (ex *AniVietSubExtractor) Search(query string) ([]SimpleAnime, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	r, err := ex.doWithRetry(req)
+	r, err := ex.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("network error: %s", err)
 	}
