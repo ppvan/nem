@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/ppvan/nem/extractor"
 
@@ -14,7 +13,7 @@ import (
 // Overall two-column layout, modeled after Free Manga Downloader's
 // sidebar-catalog + main-workspace structure: a left sidebar for
 // browsing/searching the catalog, and a right workspace for the selected
-// title's details, episode selection, and download controls.
+// title's details and episode list.
 const (
 	winWidth  = 970
 	winHeight = 615
@@ -45,18 +44,15 @@ type MyWindow struct {
 	lblStats    *ui.Static // views + total episodes
 	edtDesc     *ui.Edit
 
-	// Right workspace: episodes
-	lblEpisodes  *ui.Static
-	btnSelectAll *ui.Button
-	lvEpisodes   *ui.ListView
+	// Right workspace: episodes — double-click a row to play from there to
+	// the end of the series. No checkboxes/selection: playback is the only
+	// action, so there's nothing to select for.
+	lblEpisodes *ui.Static
+	btnOpenMPV  *ui.Button // plays the whole series, starting from episode 1
+	lvEpisodes  *ui.ListView
 
-	// Right workspace: destination + actions
-	lblPath        *ui.Static
-	edtPath        *ui.Edit
-	btnBrowse      *ui.Button
+	// Right workspace: remaining actions
 	btnOpenBrowser *ui.Button
-	btnPlay        *ui.Button
-	btnDownload    *ui.Button
 	lblStatus      *ui.Static
 
 	// State
@@ -160,64 +156,37 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 	// --- Right workspace: episodes ------------------------------------------
 
 	lblEpisodes := ui.NewStatic(wnd, ui.OptsStatic().
-		Text("Episodes:").
+		Text("Episodes (double-click to play from there):").
 		Position(ui.Dpi(rightX, 222)).
-		Size(ui.Dpi(150, 20)),
+		Size(ui.Dpi(rightW-160, 20)),
 	)
-	btnSelectAll := ui.NewButton(wnd, ui.OptsButton().
-		Text("Select All").
-		Position(ui.Dpi(rightX+rightW-100, 219)).
-		Width(ui.DpiX(100)).
+	btnOpenMPV := ui.NewButton(wnd, ui.OptsButton().
+		Text("Open in MPV").
+		Position(ui.Dpi(rightX+rightW-150, 219)).
+		Width(ui.DpiX(150)).
 		Height(ui.DpiY(24)),
 	)
 	epNumColW := ui.DpiX(50)
 	lvEpisodes := ui.NewListView(wnd, ui.OptsListView().
 		Position(ui.Dpi(rightX, 248)).
-		Size(ui.Dpi(rightW, 192)).
-		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SHOWSELALWAYS).
-		CtrlExStyle(co.LVS_EX_FULLROWSELECT|co.LVS_EX_CHECKBOXES).
+		Size(ui.Dpi(rightW, 272)).
+		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SINGLESEL|co.LVS_SHOWSELALWAYS).
+		CtrlExStyle(co.LVS_EX_FULLROWSELECT).
 		Column("#", epNumColW).
 		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-2),
 	)
 
-	// --- Right workspace: destination + actions -----------------------------
+	// --- Right workspace: remaining actions ---------------------------------
 
-	lblPath := ui.NewStatic(wnd, ui.OptsStatic().
-		Text("Save to:").
-		Position(ui.Dpi(rightX, 453)).
-		Size(ui.Dpi(60, 20)),
-	)
-	edtPath := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(rightX+65, 450)).
-		Width(ui.DpiX(540)),
-	)
-	btnBrowse := ui.NewButton(wnd, ui.OptsButton().
-		Text("Browse...").
-		Position(ui.Dpi(rightX+610, 449)).
-		Width(ui.DpiX(85)).
-		Height(ui.DpiY(26)),
-	)
 	btnOpenBrowser := ui.NewButton(wnd, ui.OptsButton().
 		Text("Open in Browser").
-		Position(ui.Dpi(rightX, 484)).
-		Width(ui.DpiX(150)).
-		Height(ui.DpiY(28)),
-	)
-	btnPlay := ui.NewButton(wnd, ui.OptsButton().
-		Text("Play in mpv").
-		Position(ui.Dpi(rightX+160, 484)).
-		Width(ui.DpiX(140)).
-		Height(ui.DpiY(28)),
-	)
-	btnDownload := ui.NewButton(wnd, ui.OptsButton().
-		Text("Download").
-		Position(ui.Dpi(rightX+rightW-150, 484)).
+		Position(ui.Dpi(rightX, 530)).
 		Width(ui.DpiX(150)).
 		Height(ui.DpiY(28)),
 	)
 	lblStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(rightX, 522)).
+		Position(ui.Dpi(rightX, 568)).
 		Size(ui.Dpi(rightW, 20)),
 	)
 
@@ -239,16 +208,11 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		lblStats:    lblStats,
 		edtDesc:     edtDesc,
 
-		lblEpisodes:  lblEpisodes,
-		btnSelectAll: btnSelectAll,
-		lvEpisodes:   lvEpisodes,
+		lblEpisodes: lblEpisodes,
+		btnOpenMPV:  btnOpenMPV,
+		lvEpisodes:  lvEpisodes,
 
-		lblPath:        lblPath,
-		edtPath:        edtPath,
-		btnBrowse:      btnBrowse,
 		btnOpenBrowser: btnOpenBrowser,
-		btnPlay:        btnPlay,
-		btnDownload:    btnDownload,
 		lblStatus:      lblStatus,
 	}
 
@@ -264,15 +228,14 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 	return wnd.RunAsMain()
 }
 
-// setEpisodes replaces lvEpisodes' rows with one per episode, each
-// starting unchecked. Unlike the fixed-checkbox-pool approach this
-// replaced, a ListView's rows can be added/removed at runtime, so there's
-// no fixed cap on episode count anymore.
+// setEpisodes replaces lvEpisodes' rows with one per episode. A ListView's
+// rows can be added/removed at any time (unlike Windigo's fixed, built-at-
+// WM_CREATE controls), so setEpisodes just clears and repopulates it per
+// anime — no cap on episode count.
 func (me *MyWindow) setEpisodes(episodes []extractor.Episode) {
 	me.lvEpisodes.DeleteAllItems()
 	for i, ep := range episodes {
-		item := me.lvEpisodes.AddItem(fmt.Sprintf("%02d", i+1), episodeLabel(ep, i+1))
-		setListViewItemChecked(me.lvEpisodes, item.Index(), false)
+		me.lvEpisodes.AddItem(fmt.Sprintf("%02d", i+1), episodeLabel(ep, i+1))
 	}
 }
 
@@ -288,38 +251,4 @@ func episodeLabel(ep extractor.Episode, number int) string {
 		return ep.Title
 	}
 	return fmt.Sprintf("Episode %d", number)
-}
-
-// --- LVS_EX_CHECKBOXES state helpers ---------------------------------------
-//
-// Windigo's ui.ListView/ListViewItem wrapper doesn't expose the per-row
-// checkbox state added by the LVS_EX_CHECKBOXES extended style, so these
-// send the underlying LVM_SETITEMSTATE/LVM_GETITEMSTATE messages directly
-// — the same pattern ui.ListViewItem.Select()/IsSelected() use internally
-// for LVIS_SELECTED, just with the state-image bits (LVIS_STATEIMAGEMASK)
-// that LVS_EX_CHECKBOXES repurposes for the checkbox: state image index 1
-// is unchecked, index 2 is checked (both encoded as index<<12).
-
-const (
-	lvisUnchecked = co.LVIS(0x1000) // INDEXTOSTATEIMAGEMASK(1)
-	lvisChecked   = co.LVIS(0x2000) // INDEXTOSTATEIMAGEMASK(2)
-)
-
-func setListViewItemChecked(lv *ui.ListView, index int, checked bool) {
-	state := lvisUnchecked
-	if checked {
-		state = lvisChecked
-	}
-	lvi := win.LVITEM{
-		State:     state,
-		StateMask: co.LVIS_STATEIMAGEMASK,
-	}
-	_, _ = lv.Hwnd().SendMessage(co.LVM_SETITEMSTATE,
-		win.WPARAM(int32(index)), win.LPARAM(unsafe.Pointer(&lvi)))
-}
-
-func isListViewItemChecked(lv *ui.ListView, index int) bool {
-	ret, _ := lv.Hwnd().SendMessage(co.LVM_GETITEMSTATE,
-		win.WPARAM(int32(index)), win.LPARAM(co.LVIS_STATEIMAGEMASK))
-	return co.LVIS(ret) == lvisChecked
 }

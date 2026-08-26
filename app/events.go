@@ -8,8 +8,6 @@ import (
 
 	"github.com/rodrigocfd/windigo/co"
 	"github.com/rodrigocfd/windigo/win"
-	"github.com/rodrigocfd/windigo/x/cosh"
-	"github.com/rodrigocfd/windigo/x/winsh"
 )
 
 func (me *MyWindow) events() {
@@ -106,56 +104,19 @@ func (me *MyWindow) events() {
 		})
 	})
 
-	// --- Select all / none episodes -----------------------------------------
+	// --- Episodes: double-click a row to play from there to the end -------
 
-	me.btnSelectAll.On().BnClicked(func() {
-		n := me.lvEpisodes.ItemCount()
-		if n == 0 {
+	me.lvEpisodes.On().NmDblClk(func(p *win.NMITEMACTIVATE) {
+		if p.IItem < 0 {
 			return
 		}
-
-		allChecked := true
-		for i := 0; i < n; i++ {
-			if !isListViewItemChecked(me.lvEpisodes, i) {
-				allChecked = false
-				break
-			}
-		}
-
-		for i := 0; i < n; i++ {
-			setListViewItemChecked(me.lvEpisodes, i, !allChecked)
-		}
+		me.playFrom(int(p.IItem))
 	})
 
-	// --- Browse for destination folder --------------------------------
+	// --- Open in MPV: play the whole series from episode 1 -----------------
 
-	me.btnBrowse.On().BnClicked(func() {
-		rel := win.NewOleReleaser()
-		defer rel.Release()
-
-		var fod *winsh.IFileOpenDialog
-		if err := win.CoCreateInstance(
-			rel,
-			&cosh.CLSID_FileOpenDialog,
-			nil,
-			co.CLSCTX_INPROC_SERVER,
-			&fod,
-		); err != nil {
-			setStatic(me.lblStatus, "Error opening folder picker: "+err.Error())
-			return
-		}
-
-		defOpts, _ := fod.GetOptions()
-		_ = fod.SetOptions(defOpts | cosh.FOS_PICKFOLDERS | cosh.FOS_FORCEFILESYSTEM)
-
-		if ok, _ := fod.Show(me.wnd.Hwnd()); ok {
-			item, err := fod.GetResult(rel)
-			if err != nil {
-				return
-			}
-			path, _ := item.GetDisplayName(cosh.SIGDN_FILESYSPATH)
-			me.edtPath.SetText(path)
-		}
+	me.btnOpenMPV.On().BnClicked(func() {
+		me.playFrom(0)
 	})
 
 	// --- Open the current anime's page in the default browser -------------
@@ -169,94 +130,32 @@ func (me *MyWindow) events() {
 			setStatic(me.lblStatus, "Couldn't open browser: "+err.Error())
 		}
 	})
+}
 
-	// --- Play the first checked episode in mpv -----------------------------
+// playFrom launches mpv on a watch playlist covering
+// me.currentInfo.Episodes[startIdx:] — see streamServer.NewWatchSession's
+// doc comment in stream.go for how episodes after the first get queued.
+// Called from either a double-click on an episode row or the Open in MPV
+// button (which always passes 0).
+func (me *MyWindow) playFrom(startIdx int) {
+	if me.currentInfo == nil || len(me.currentInfo.Episodes) == 0 {
+		setStatic(me.lblStatus, "Load an anime first.")
+		return
+	}
+	if startIdx < 0 || startIdx >= len(me.currentInfo.Episodes) {
+		return
+	}
 
-	me.btnPlay.On().BnClicked(func() {
-		if me.currentInfo == nil {
-			setStatic(me.lblStatus, "Load an anime first.")
-			return
-		}
+	episodes := me.currentInfo.Episodes[startIdx:]
+	watchURL := me.stream.NewWatchSession(episodes)
 
-		idx := -1
-		for i := range me.currentInfo.Episodes {
-			if isListViewItemChecked(me.lvEpisodes, i) {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			setStatic(me.lblStatus, "Check an episode to play.")
-			return
-		}
+	if err := launchMPV(watchURL); err != nil {
+		setStatic(me.lblStatus, "Couldn't launch mpv: "+err.Error())
+		return
+	}
 
-		ep := me.currentInfo.Episodes[idx]
-		playlistURL := me.stream.NewSession(ep)
-
-		if err := launchMPV(playlistURL); err != nil {
-			setStatic(me.lblStatus, "Couldn't launch mpv: "+err.Error())
-			return
-		}
-		setStatic(me.lblStatus, "Launched mpv: "+episodeLabel(ep, idx+1))
-	})
-
-	// --- Download selected episodes -------------------------------------
-
-	me.btnDownload.On().BnClicked(func() {
-		if me.currentInfo == nil {
-			setStatic(me.lblStatus, "Load an anime first.")
-			return
-		}
-
-		destDir := me.edtPath.Text()
-		if destDir == "" {
-			setStatic(me.lblStatus, "Please choose a destination folder first.")
-			return
-		}
-
-		var selected []selectedEpisode
-		for i, ep := range me.currentInfo.Episodes {
-			if isListViewItemChecked(me.lvEpisodes, i) {
-				selected = append(selected, selectedEpisode{number: i + 1, ep: ep})
-			}
-		}
-		if len(selected) == 0 {
-			setStatic(me.lblStatus, "Select at least one episode to download.")
-			return
-		}
-
-		me.btnDownload.Hwnd().EnableWindow(false)
-		me.btnDownload.SetText("Downloading...")
-
-		go func() {
-			var done, failed int
-			for progress := range downloadEpisodes(me.ext, selected, destDir) {
-				p := progress
-				me.wnd.UiThread(func() {
-					switch {
-					case p.err != nil:
-						failed++
-						setStatic(me.lblStatus, fmt.Sprintf("%s failed: %v", p.label, p.err))
-					case p.done:
-						done++
-						setStatic(me.lblStatus, fmt.Sprintf("Downloaded %d/%d: %s",
-							done, len(selected), p.label))
-					default:
-						// Intermediate progress update; note this fires once per
-						// callback invocation from ext.Download, so if that's very
-						// chatty you may want to throttle these UI updates.
-						setStatic(me.lblStatus, fmt.Sprintf("%s: %.0f%%", p.label, p.fraction*100))
-					}
-				})
-			}
-
-			me.wnd.UiThread(func() {
-				me.btnDownload.Hwnd().EnableWindow(true)
-				me.btnDownload.SetText("Download")
-				setStatic(me.lblStatus, fmt.Sprintf("Done. %d succeeded, %d failed.", done, failed))
-			})
-		}()
-	})
+	label := episodeLabel(episodes[0], startIdx+1)
+	setStatic(me.lblStatus, fmt.Sprintf("Playing from %s (%d episode(s) queued)", label, len(episodes)))
 }
 
 // loadResultsList runs fetch (ext.Search or ext.Trending) in the

@@ -4,15 +4,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"syscall"
 	"time"
-
-	"github.com/ppvan/nem/extractor"
 )
 
 const thumbnailFetchTimeout = 10 * time.Second
@@ -84,77 +78,4 @@ func fetchThumbnail(url string) ([]byte, error) {
 		return nil, fmt.Errorf("read thumbnail: %w", err)
 	}
 	return data, nil
-}
-
-// selectedEpisode pairs a 1-based position with the extractor.Episode
-// needed to actually fetch it (episode.Title is used for display/filenames;
-// Id/Href/Hash/MovieId just flow straight into ext.Download).
-type selectedEpisode struct {
-	number int
-	ep     extractor.Episode
-}
-
-// downloadProgress is reported back to the UI while a batch download runs.
-// Exactly one of (err != nil), done, or a plain fraction update is true
-// per message.
-type downloadProgress struct {
-	label    string  // e.g. the episode's title, or "Ep. 3" if it has none
-	fraction float64 // 0..1, updated via ext.Download's progress callback
-	done     bool
-	err      error
-}
-
-// downloadEpisodes downloads each selected episode in turn to destDir,
-// reporting progress on the returned channel. The channel is closed once
-// every episode has been attempted; a failure on one episode does not stop
-// the rest of the batch.
-func downloadEpisodes(ext *extractor.AniVietSubExtractor, episodes []selectedEpisode, destDir string) <-chan downloadProgress {
-	ch := make(chan downloadProgress)
-
-	go func() {
-		defer close(ch)
-
-		for _, se := range episodes {
-			label := episodeLabel(se.ep, se.number)
-			path := filepath.Join(destDir, episodeFileName(se))
-
-			f, err := os.Create(path)
-			if err != nil {
-				ch <- downloadProgress{label: label, err: fmt.Errorf("create file: %w", err)}
-				continue
-			}
-
-			dlErr := ext.Download(se.ep, f, func(progress float64) {
-				ch <- downloadProgress{label: label, fraction: progress}
-			})
-
-			closeErr := f.Close()
-			if dlErr == nil {
-				dlErr = closeErr
-			}
-
-			if dlErr != nil {
-				ch <- downloadProgress{label: label, err: dlErr}
-				continue
-			}
-
-			ch <- downloadProgress{label: label, fraction: 1, done: true}
-		}
-	}()
-
-	return ch
-}
-
-var unsafeFileChars = regexp.MustCompile(`[\\/:*?"<>|]`)
-
-// episodeFileName builds a filesystem-safe name from the episode's title
-// (falling back to its position if the title is empty), prefixed with a
-// zero-padded number so files sort in order regardless of title.
-func episodeFileName(se selectedEpisode) string {
-	name := se.ep.Title
-	if name == "" {
-		name = fmt.Sprintf("Episode %d", se.number)
-	}
-	name = strings.TrimSpace(unsafeFileChars.ReplaceAllString(name, "_"))
-	return fmt.Sprintf("%02d - %s.mp4", se.number, name)
 }

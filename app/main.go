@@ -18,7 +18,7 @@ const animeDomain = "https://animevietsub.work"
 func main() {
 	runtime.LockOSThread() // Windows GUI must run on the OS thread
 
-	// COM is needed for the "Browse..." folder picker (IFileOpenDialog).
+	// COM is needed for WIC thumbnail decoding (see thumbnail.go).
 	_, _ = win.CoInitializeEx(co.COINIT_APARTMENTTHREADED | co.COINIT_DISABLE_OLE1DDE)
 	defer win.CoUninitialize()
 

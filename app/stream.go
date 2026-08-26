@@ -16,13 +16,21 @@ import (
 )
 
 // streamServer is a local loopback HTTP server that lets an external
-// player (mpv) play an episode without ever talking to the real site
-// directly. It re-exposes extractor.AniVietSubExtractor.GetM3UPlaylist and
-// DownloadSegment as plain HTTP endpoints, rewriting every URI in the
-// playlist to point back at itself — so mpv only ever sees ordinary HTTP
-// URLs on 127.0.0.1, and every actual fetch (with whatever headers,
-// retries, or decryption the site needs) goes through the same extractor
-// code Download() already uses.
+// player (mpv) play one or more episodes back-to-back without ever
+// talking to the real site directly. It re-exposes
+// extractor.AniVietSubExtractor.GetM3UPlaylist and DownloadSegment as
+// plain HTTP endpoints, rewriting every URI in the playlist to point back
+// at itself — so mpv only ever sees ordinary HTTP URLs on 127.0.0.1, and
+// every actual fetch (with whatever headers, retries, or decryption the
+// site needs) goes through the same extractor code Download() already
+// uses.
+//
+// Two layers: /playlist.m3u8 serves one episode's actual HLS stream
+// (proxying GetM3UPlaylist/DownloadSegment); /watch.m3u8 serves a plain
+// mpv playlist chaining several /playlist.m3u8 URLs together, so clicking
+// one episode can queue up everything from there to the end of the series
+// — see NewWatchSession's doc comment for why that's a different thing
+// from an HLS "master playlist" despite the similar name.
 //
 // IMPORTANT ASSUMPTION: this assumes DownloadSegment returns final,
 // already-decrypted, directly playable segment bytes — mirroring how
@@ -38,16 +46,18 @@ type streamServer struct {
 
 	baseURL string // set once by Start, read-only after that
 
-	mu       sync.Mutex
-	sessions map[string]extractor.Episode
+	mu         sync.Mutex
+	sessions   map[string]extractor.Episode // token -> single episode, served via /playlist.m3u8
+	watchLists map[string][]string          // token -> ordered per-episode playlist URLs, served via /watch.m3u8
 
 	nextToken atomic.Int64
 }
 
 func newStreamServer(ext *extractor.AniVietSubExtractor) *streamServer {
 	return &streamServer{
-		ext:      ext,
-		sessions: make(map[string]extractor.Episode),
+		ext:        ext,
+		sessions:   make(map[string]extractor.Episode),
+		watchLists: make(map[string][]string),
 	}
 }
 
@@ -64,6 +74,7 @@ func (s *streamServer) Start() (string, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/playlist.m3u8", s.handlePlaylist)
+	mux.HandleFunc("/watch.m3u8", s.handleWatch)
 	mux.HandleFunc("/seg", s.handleSeg)
 
 	srv := &http.Server{
@@ -90,6 +101,62 @@ func (s *streamServer) NewSession(ep extractor.Episode) (playlistURL string) {
 	s.mu.Unlock()
 
 	return s.baseURL + "/playlist.m3u8?t=" + token
+}
+
+// NewWatchSession registers a fresh per-episode session (via NewSession)
+// for every episode in episodes, then registers *that ordered list of
+// playlist URLs* under its own token, returning a /watch.m3u8 URL.
+//
+// /watch.m3u8 is deliberately NOT an HLS master playlist
+// (#EXT-X-STREAM-INF) — that tag is for bitrate/quality variants of the
+// *same* video, and a real player picks exactly one variant and sticks
+// with it, never sequences through them. What it serves instead is a
+// plain mpv-style playlist: one URL per line, no HLS-specific tags. mpv
+// (and ffmpeg's HLS demuxer, which mpv uses) only claims a .m3u8 as a real
+// HLS stream when it contains HLS-required tags like #EXT-X-TARGETDURATION;
+// without those, mpv's own playlist parser takes over and auto-advances
+// through each URL in order — which is what gives "click once, watch
+// through to the end" behavior across otherwise-unrelated episode files.
+func (s *streamServer) NewWatchSession(episodes []extractor.Episode) (watchURL string) {
+	epURLs := make([]string, len(episodes))
+	for i, ep := range episodes {
+		epURLs[i] = s.NewSession(ep)
+	}
+
+	token := strconv.FormatInt(s.nextToken.Add(1), 10)
+
+	s.mu.Lock()
+	s.watchLists[token] = epURLs
+	s.mu.Unlock()
+
+	return s.baseURL + "/watch.m3u8?t=" + token
+}
+
+func (s *streamServer) handleWatch(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("t")
+
+	s.mu.Lock()
+	epURLs, ok := s.watchLists[token]
+	s.mu.Unlock()
+
+	if !ok {
+		http.Error(w, "unknown or expired session", http.StatusNotFound)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("#EXTM3U\n")
+	for _, u := range epURLs {
+		sb.WriteString(u)
+		sb.WriteString("\n")
+	}
+
+	// audio/x-mpegurl (the classic generic M3U type), not
+	// application/vnd.apple.mpegurl (the HLS-specific one used by
+	// /playlist.m3u8 below) — this isn't an HLS stream, it's a plain
+	// playlist of separate HLS streams.
+	w.Header().Set("Content-Type", "audio/x-mpegurl")
+	_, _ = w.Write([]byte(sb.String()))
 }
 
 func (s *streamServer) handlePlaylist(w http.ResponseWriter, r *http.Request) {
