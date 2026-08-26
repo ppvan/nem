@@ -9,12 +9,31 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ppvan/nem/extractor"
 )
 
 const thumbnailFetchTimeout = 10 * time.Second
+
+// newHiddenCmd builds an exec.Cmd for name/args that won't flash a console
+// window when started from this GUI app.
+//
+// Windows allocates a new console window for a spawned process whenever
+// that process is a *console-subsystem* executable (as most portable mpv
+// builds are, even though mpv opens its own GUI video window once it's
+// running) — CreateProcess does this by default unless told not to.
+// exec.Command doesn't set that flag itself, so without this, launching
+// mpv briefly shows a console window before mpv's own window appears on
+// top of it.
+func newHiddenCmd(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+	}
+	return cmd
+}
 
 // openInBrowser launches url in the OS default browser. Uses the standard
 // rundll32 trick (delegates to the shell's URL file-association handler)
@@ -24,7 +43,7 @@ func openInBrowser(url string) error {
 	if url == "" {
 		return fmt.Errorf("no URL to open")
 	}
-	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	return newHiddenCmd("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
 
 // launchMPV starts mpv as a separate, detached process pointed at url
@@ -34,7 +53,7 @@ func openInBrowser(url string) error {
 // ("exec: \"mpv\": executable file not found in %PATH%") that no extra
 // wrapping is needed.
 func launchMPV(url string) error {
-	return exec.Command("mpv", url).Start()
+	return newHiddenCmd("mpv", url).Start()
 }
 
 // fetchThumbnail downloads the raw poster image bytes for AnimeDetail's

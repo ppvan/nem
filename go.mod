@@ -26,6 +26,5 @@ require (
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bogdanfinn/fhttp v0.6.8
-	golang.org/x/image v0.45.0
 	golang.org/x/net v0.48.0 // indirect
 )
