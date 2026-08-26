@@ -29,17 +29,6 @@ func newHiddenCmd(name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// openInBrowser launches url in the OS default browser. Uses the standard
-// rundll32 trick (delegates to the shell's URL file-association handler)
-// rather than a third-party package, since it's one line of stdlib
-// os/exec and needs no extra dependency.
-func openInBrowser(url string) error {
-	if url == "" {
-		return fmt.Errorf("no URL to open")
-	}
-	return newHiddenCmd("rundll32", "url.dll,FileProtocolHandler", url).Start()
-}
-
 // launchMPV starts mpv as a separate, detached process pointed at url
 // (expected to be a local http://127.0.0.1:... playlist URL from
 // streamServer — see stream.go). Assumes mpv is already installed and on

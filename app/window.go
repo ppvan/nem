@@ -16,13 +16,14 @@ import (
 // title's details and episode list.
 const (
 	winWidth  = 970
-	winHeight = 615
+	winHeight = 570
 
 	sidebarX = 10
 	sidebarW = 230 // sidebar controls span x=10..240
 
-	rightX = 255 // 15px gutter after the sidebar
-	rightW = 700 // 255..955, leaving a 15px right margin
+	rightX       = 255 // 15px gutter after the sidebar
+	rightW       = 700 // 255..955, leaving a 15px right margin
+	scrollBarPad = 8
 )
 
 // MyWindow holds every control plus the small amount of UI-side state.
@@ -32,7 +33,6 @@ type MyWindow struct {
 	// Left sidebar: catalog browsing
 	edtSidebarSearch *ui.Edit
 	btnSidebarSearch *ui.Button
-	btnTrending      *ui.Button
 	lvResults        *ui.ListView
 	lblSidebarStatus *ui.Static
 
@@ -52,8 +52,7 @@ type MyWindow struct {
 	lvEpisodes  *ui.ListView
 
 	// Right workspace: remaining actions
-	btnOpenBrowser *ui.Button
-	lblStatus      *ui.Static
+	lblStatus *ui.Static
 
 	// State
 	ext             *extractor.AniVietSubExtractor
@@ -88,31 +87,25 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 	vScrollW := int(win.GetSystemMetrics(co.SM_CXVSCROLL))
 
 	edtSidebarSearch := ui.NewEdit(wnd, ui.OptsEdit().
-		Position(ui.Dpi(sidebarX, 35)).
+		Position(ui.Dpi(sidebarX, 13)).
 		Width(ui.DpiX(150)),
 	)
 	btnSidebarSearch := ui.NewButton(wnd, ui.OptsButton().
 		Text("Search").
-		Position(ui.Dpi(sidebarX+160, 34)).
+		Position(ui.Dpi(sidebarX+160, 12)).
 		Width(ui.DpiX(70)).
 		Height(ui.DpiY(26)),
 	)
-	btnTrending := ui.NewButton(wnd, ui.OptsButton().
-		Text("Trending").
-		Position(ui.Dpi(sidebarX, 65)).
-		Width(ui.DpiX(sidebarW)).
-		Height(ui.DpiY(24)),
-	)
 	lvResults := ui.NewListView(wnd, ui.OptsListView().
-		Position(ui.Dpi(sidebarX, 95)).
+		Position(ui.Dpi(sidebarX, 45)).
 		Size(ui.Dpi(sidebarW, 480)).
 		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SINGLESEL|co.LVS_SHOWSELALWAYS).
 		CtrlExStyle(co.LVS_EX_FULLROWSELECT).
-		Column("Title", ui.DpiX(sidebarW)-vScrollW-2),
+		Column("Title", ui.DpiX(sidebarW)-vScrollW-scrollBarPad),
 	)
 	lblSidebarStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(sidebarX, 580)).
+		Position(ui.Dpi(sidebarX, 540)).
 		Size(ui.Dpi(sidebarW, 20)),
 	)
 
@@ -168,25 +161,19 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 	)
 	epNumColW := ui.DpiX(50)
 	lvEpisodes := ui.NewListView(wnd, ui.OptsListView().
-		Position(ui.Dpi(rightX, 248)).
+		Position(ui.Dpi(rightX, 252)).
 		Size(ui.Dpi(rightW, 272)).
 		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SINGLESEL|co.LVS_SHOWSELALWAYS).
 		CtrlExStyle(co.LVS_EX_FULLROWSELECT).
 		Column("#", epNumColW).
-		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-2),
+		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-scrollBarPad),
 	)
 
 	// --- Right workspace: remaining actions ---------------------------------
 
-	btnOpenBrowser := ui.NewButton(wnd, ui.OptsButton().
-		Text("Open in Browser").
-		Position(ui.Dpi(rightX, 530)).
-		Width(ui.DpiX(150)).
-		Height(ui.DpiY(28)),
-	)
 	lblStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
-		Position(ui.Dpi(rightX, 568)).
+		Position(ui.Dpi(rightX, 540)).
 		Size(ui.Dpi(rightW, 20)),
 	)
 
@@ -197,7 +184,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 
 		edtSidebarSearch: edtSidebarSearch,
 		btnSidebarSearch: btnSidebarSearch,
-		btnTrending:      btnTrending,
 		lvResults:        lvResults,
 		lblSidebarStatus: lblSidebarStatus,
 
@@ -212,8 +198,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		btnOpenMPV:  btnOpenMPV,
 		lvEpisodes:  lvEpisodes,
 
-		btnOpenBrowser: btnOpenBrowser,
-		lblStatus:      lblStatus,
+		lblStatus: lblStatus,
 	}
 
 	// All child controls get their real HWNDs during WM_CREATE, in the

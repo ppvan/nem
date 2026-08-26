@@ -83,12 +83,6 @@ func (me *MyWindow) events() {
 		})
 	})
 
-	// --- Sidebar: trending -------------------------------------------------
-
-	me.btnTrending.On().BnClicked(func() {
-		me.loadResultsList("Trending", me.ext.Trending)
-	})
-
 	// --- Sidebar: double-click a result to load its details ---------------
 
 	me.lvResults.On().NmDblClk(func(p *win.NMITEMACTIVATE) {
@@ -119,17 +113,6 @@ func (me *MyWindow) events() {
 		me.playFrom(0)
 	})
 
-	// --- Open the current anime's page in the default browser -------------
-
-	me.btnOpenBrowser.On().BnClicked(func() {
-		if me.currentInfo == nil || me.currentInfo.Href == "" {
-			setStatic(me.lblStatus, "Load an anime first.")
-			return
-		}
-		if err := openInBrowser(me.currentInfo.Href); err != nil {
-			setStatic(me.lblStatus, "Couldn't open browser: "+err.Error())
-		}
-	})
 }
 
 // playFrom launches mpv on a watch playlist covering

@@ -9,7 +9,7 @@ import (
 	"github.com/rodrigocfd/windigo/win"
 )
 
-const appTitle = "Anime Downloader"
+const appTitle = "Kyoa"
 
 // TODO: make this configurable (a settings field, env var, flag, etc.)
 // instead of hardcoding a single site.
