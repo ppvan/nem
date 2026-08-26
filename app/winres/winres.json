@@ -1,7 +1,7 @@
 {
     "RT_GROUP_ICON": {
         "APP": {
-            "0000": ["icon.png", "icon16.png"]
+            "0000": ["icon.png"]
         },
         "#42": {
             "0409": "icon.ico"
@@ -11,11 +11,11 @@
         "#1": {
             "0409": {
                 "identity": {
-                    "name": "SimpleQR",
+                    "name": "Kyoa",
                     "version": ""
                 },
                 "description": "",
-                "minimum-os": "win7",
+                "minimum-os": "win10",
                 "execution-level": "as invoker",
                 "ui-access": false,
                 "auto-elevate": false,
@@ -41,7 +41,7 @@
                 },
                 "info": {
                     "0409": {
-                        "Comments": "Simple QR code app",
+                        "Comments": "app",
                         "CompanyName": "ppvan personal app",
                         "FileDescription": "",
                         "FileVersion": "",

@@ -67,6 +67,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		ui.OptsMain().
 			Title(appTitle).
 			Center(true).
+			ClassIconId(42).
 			Size(ui.Dpi(winWidth, winHeight)),
 		// No ClassIconId() here: that requires an icon resource compiled
 		// into the .exe (via a .syso resource file, like windigo's own
