@@ -170,6 +170,36 @@ func (me *MyWindow) events() {
 		}
 	})
 
+	// --- Play the first checked episode in mpv -----------------------------
+
+	me.btnPlay.On().BnClicked(func() {
+		if me.currentInfo == nil {
+			setStatic(me.lblStatus, "Load an anime first.")
+			return
+		}
+
+		idx := -1
+		for i := range me.currentInfo.Episodes {
+			if isListViewItemChecked(me.lvEpisodes, i) {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			setStatic(me.lblStatus, "Check an episode to play.")
+			return
+		}
+
+		ep := me.currentInfo.Episodes[idx]
+		playlistURL := me.stream.NewSession(ep)
+
+		if err := launchMPV(playlistURL); err != nil {
+			setStatic(me.lblStatus, "Couldn't launch mpv: "+err.Error())
+			return
+		}
+		setStatic(me.lblStatus, "Launched mpv: "+episodeLabel(ep, idx+1))
+	})
+
 	// --- Download selected episodes -------------------------------------
 
 	me.btnDownload.On().BnClicked(func() {

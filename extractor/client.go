@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/url"
 	"strings"
 	"time"
@@ -234,6 +235,71 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(pr
 		downloader = newGreedyDownloader(ex.client, ex.domain)
 	}
 	return downloader.downloadSegments(segmentURLs, w, callback)
+}
+
+// DownloadSegment downloads a single HLS segment and returns its decoded
+// bytes.
+//
+// Segments on this site are disguised as PNG files — the real .ts payload
+// is appended after the PNG's IEND chunk, presumably to dodge naive
+// content-type/extension filtering. extractDataAfterIEND (already defined
+// elsewhere in this package) strips that wrapper back off.
+//
+// Retries on HTTP 429 with exponential backoff + jitter, since segment
+// CDNs on this site rate-limit aggressively; any other non-200 status or
+// transport error fails immediately without retrying.
+func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
+	const (
+		segmentMaxRetries     = 10
+		segmentInitialBackoff = 50 * time.Millisecond
+		segmentMaxBackoff     = 2 * time.Second
+	)
+
+	backoff := segmentInitialBackoff
+
+	for range segmentMaxRetries {
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build segment request: %w", err)
+		}
+		req.Header.Set("Referer", ex.domain)
+		req.Header.Set("User-Agent", chromeUA)
+
+		resp, err := ex.client.Do(req)
+		if err != nil {
+			// resp is nil on a transport error, so there's nothing to
+			// close — and unlike a 429, this isn't something retrying is
+			// likely to fix, so fail immediately.
+			return nil, fmt.Errorf("fetch segment: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			jitter := backoff/2 + time.Duration(rand.Float64()*float64(backoff/2))
+			time.Sleep(jitter)
+			backoff = min(backoff*2, segmentMaxBackoff)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		}
+
+		raw, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read segment body: %w", err)
+		}
+
+		data, err := extractDataAfterIEND(raw)
+		if err != nil {
+			return nil, fmt.Errorf("extract segment data: %w", err)
+		}
+		return data, nil
+	}
+
+	return nil, fmt.Errorf("max retries exceeded for URL: %s", url)
 }
 
 func (ex *AniVietSubExtractor) fetchPlaylist(playlistURL string, origin string) ([]byte, http.Header, error) {

@@ -27,6 +27,16 @@ func openInBrowser(url string) error {
 	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
 
+// launchMPV starts mpv as a separate, detached process pointed at url
+// (expected to be a local http://127.0.0.1:... playlist URL from
+// streamServer — see stream.go). Assumes mpv is already installed and on
+// PATH; if it isn't, the returned error says so plainly enough
+// ("exec: \"mpv\": executable file not found in %PATH%") that no extra
+// wrapping is needed.
+func launchMPV(url string) error {
+	return exec.Command("mpv", url).Start()
+}
+
 // fetchThumbnail downloads the raw poster image bytes for AnimeDetail's
 // Thumbnail URL (a plain .jpg link). Returns (nil, nil) if url is empty —
 // that's a normal "no poster" case, not an error.

@@ -55,17 +55,19 @@ type MyWindow struct {
 	edtPath        *ui.Edit
 	btnBrowse      *ui.Button
 	btnOpenBrowser *ui.Button
+	btnPlay        *ui.Button
 	btnDownload    *ui.Button
 	lblStatus      *ui.Static
 
 	// State
 	ext             *extractor.AniVietSubExtractor
+	stream          *streamServer
 	thumbnailPixels []byte                 // decoded top-down 32bpp BGR pixels (nil = show placeholder); see thumbnail.go
 	thumbnailSize   win.SIZE               // pixel dimensions matching thumbnailPixels
 	currentInfo     *extractor.AnimeDetail // last loaded anime info; nil until first successful load
 }
 
-func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
+func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) int {
 	wnd := ui.NewMain(
 		ui.OptsMain().
 			Title(appTitle).
@@ -175,7 +177,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		CtrlStyle(co.LVS_REPORT|co.LVS_NOCOLUMNHEADER|co.LVS_SHOWSELALWAYS).
 		CtrlExStyle(co.LVS_EX_FULLROWSELECT|co.LVS_EX_CHECKBOXES).
 		Column("#", epNumColW).
-		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-8),
+		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-2),
 	)
 
 	// --- Right workspace: destination + actions -----------------------------
@@ -201,6 +203,12 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		Width(ui.DpiX(150)).
 		Height(ui.DpiY(28)),
 	)
+	btnPlay := ui.NewButton(wnd, ui.OptsButton().
+		Text("Play in mpv").
+		Position(ui.Dpi(rightX+160, 484)).
+		Width(ui.DpiX(140)).
+		Height(ui.DpiY(28)),
+	)
 	btnDownload := ui.NewButton(wnd, ui.OptsButton().
 		Text("Download").
 		Position(ui.Dpi(rightX+rightW-150, 484)).
@@ -214,8 +222,9 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 	)
 
 	me := &MyWindow{
-		wnd: wnd,
-		ext: ext,
+		wnd:    wnd,
+		ext:    ext,
+		stream: stream,
 
 		edtSidebarSearch: edtSidebarSearch,
 		btnSidebarSearch: btnSidebarSearch,
@@ -238,6 +247,7 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor) int {
 		edtPath:        edtPath,
 		btnBrowse:      btnBrowse,
 		btnOpenBrowser: btnOpenBrowser,
+		btnPlay:        btnPlay,
 		btnDownload:    btnDownload,
 		lblStatus:      lblStatus,
 	}

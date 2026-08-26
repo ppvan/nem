@@ -35,5 +35,15 @@ func main() {
 		return
 	}
 
-	ShowMainWindow(ext)
+	// Local loopback proxy that lets an external mpv process play an
+	// episode through ext's own fetch/decrypt logic — see stream.go.
+	stream := newStreamServer(ext)
+	if _, err := stream.Start(); err != nil {
+		win.HWND(0).MessageBox(
+			"Failed to start local stream server:\n"+err.Error(),
+			appTitle, co.MB_ICONERROR)
+		return
+	}
+
+	ShowMainWindow(ext, stream)
 }
