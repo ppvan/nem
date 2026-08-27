@@ -206,25 +206,6 @@ func (ex *AniVietSubExtractor) GetM3UPlaylist(e Episode) ([]byte, error) {
 	return playlist, nil
 }
 
-func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(progress float64)) error {
-	playlist, err := ex.GetM3UPlaylist(e)
-	if err != nil {
-		return err
-	}
-	segmentURLs := extractSegmentURLs(playlist)
-	if len(segmentURLs) == 0 {
-		return fmt.Errorf("no segment URLs found in playlist")
-	}
-
-	var downloader SegmentDownloader
-	if ex.useAdaptive {
-		downloader = newAdaptiveDownloader(ex.client, ex.domain)
-	} else {
-		downloader = newGreedyDownloader(ex.client, ex.domain)
-	}
-	return downloader.downloadSegments(segmentURLs, w, callback)
-}
-
 func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 	const (
 		segmentMaxRetries     = 10

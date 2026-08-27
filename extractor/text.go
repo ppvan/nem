@@ -118,18 +118,6 @@ func extractDataAfterIEND(raw []byte) ([]byte, error) {
 	return nil, errors.New("IEND chunk not found in PNG file")
 }
 
-func extractSegmentURLs(playlist []byte) []string {
-	lines := strings.Split(string(playlist), "\n")
-	urls := make([]string, 0, len(lines)/2)
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http") {
-			urls = append(urls, line)
-		}
-	}
-	return urls
-}
-
 func extractMovies(r io.Reader) ([]SimpleAnime, error) {
 	doc, err := goquery.NewDocumentFromReader(r)
 	if err != nil {

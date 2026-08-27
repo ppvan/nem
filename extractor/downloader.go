@@ -22,15 +22,6 @@ type greedyDownloader struct {
 	maxBackoff time.Duration
 }
 
-func newGreedyDownloader(client tls_client.HttpClient, referer string) *greedyDownloader {
-	return &greedyDownloader{
-		client:     client,
-		referer:    referer,
-		backoff:    50 * time.Millisecond,
-		maxBackoff: 2 * time.Second,
-	}
-}
-
 func (gd *greedyDownloader) downloadSegments(urls []string, w io.Writer, callback func(float64)) error {
 	for i, url := range urls {
 		if err := gd.downloadSegment(url, w); err != nil {
@@ -108,16 +99,6 @@ type adaptiveDownloader struct {
 	minDelay      time.Duration
 	maxDelay      time.Duration
 	successStreak int
-}
-
-func newAdaptiveDownloader(client tls_client.HttpClient, referer string) *adaptiveDownloader {
-	return &adaptiveDownloader{
-		client:   client,
-		referer:  referer,
-		delay:    0 * time.Millisecond,
-		minDelay: 0 * time.Millisecond,
-		maxDelay: 150 * time.Millisecond,
-	}
 }
 
 func (ad *adaptiveDownloader) downloadSegments(urls []string, w io.Writer, callback func(float64)) error {
