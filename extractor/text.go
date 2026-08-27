@@ -179,13 +179,27 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 
 	href := doc.Find("meta[property='og:url']").First().AttrOr("content", "")
 
+	articleTag := doc.Find("article.TPost")
+	title := strings.TrimSpace(articleTag.Find("h1.Title").Text())
+	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
+	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
+	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
+	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
+	thumbnail := strings.TrimSpace(articleTag.Find("div.Image img").AttrOr("src", "N/A"))
+
+	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
+	var rating float64
+	if rv, err := strconv.ParseFloat(scoreStr, 64); err == nil {
+		rating = rv / 10
+	}
+
 	var episodes []Episode
 	episodeListTag := doc.Find("#list-server").First()
 	episodeListTag.Find("li.episode>a.btn-episode").Each(func(i int, s *goquery.Selection) {
 		episodes = append(episodes, Episode{
 			MovieId: movieId,
 			Id:      s.AttrOr("data-id", ""),
-			Title:   s.AttrOr("title", ""),
+			Title:   fmt.Sprint(title, " - ", s.AttrOr("title", "")),
 			Href:    s.AttrOr("href", ""),
 			Hash:    s.AttrOr("data-hash", ""),
 		})
@@ -207,20 +221,6 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 			return 0
 		}
 	})
-
-	articleTag := doc.Find("article.TPost")
-	title := strings.TrimSpace(articleTag.Find("h1.Title").Text())
-	subtitle := strings.TrimSpace(articleTag.Find("h2.SubTitle").Text())
-	description := strings.TrimSpace(articleTag.Find("div.Description").Text())
-	accessTime := strings.TrimSpace(articleTag.Find("span.Time").Text())
-	views := strings.TrimSpace(strings.SplitN(articleTag.Find("span.View").Text(), " ", 2)[0])
-	thumbnail := strings.TrimSpace(articleTag.Find("div.Image img").AttrOr("src", "N/A"))
-
-	scoreStr := strings.TrimSpace(articleTag.Find("#TPVotes").AttrOr("data-percent", "0"))
-	var rating float64
-	if rv, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-		rating = rv / 10
-	}
 
 	return &AnimeDetail{
 		Id:            movieId,

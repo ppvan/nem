@@ -15,6 +15,11 @@ import (
 	"github.com/ppvan/nem/extractor"
 )
 
+type watchEntry struct {
+	Title string
+	URL   string
+}
+
 type streamServer struct {
 	ext *extractor.AniVietSubExtractor
 
@@ -22,7 +27,7 @@ type streamServer struct {
 
 	mu         sync.Mutex
 	sessions   map[string]extractor.Episode
-	watchLists map[string][]string
+	watchLists map[string][]watchEntry
 
 	nextToken atomic.Int64
 }
@@ -31,7 +36,7 @@ func newStreamServer(ext *extractor.AniVietSubExtractor) *streamServer {
 	return &streamServer{
 		ext:        ext,
 		sessions:   make(map[string]extractor.Episode),
-		watchLists: make(map[string][]string),
+		watchLists: make(map[string][]watchEntry),
 	}
 }
 
@@ -43,7 +48,7 @@ func (s *streamServer) Start() (string, error) {
 	s.baseURL = fmt.Sprintf("http://%s", ln.Addr().String())
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/playlist.m3u8", s.handlePlaylist)
+	mux.HandleFunc("/hls/{name}/master.m3u8", s.handlePlaylist)
 	mux.HandleFunc("/watch.m3u8", s.handleWatch)
 	mux.HandleFunc("/seg", s.handleSeg)
 
@@ -65,29 +70,28 @@ func (s *streamServer) NewSession(ep extractor.Episode) (playlistURL string) {
 	s.sessions[token] = ep
 	s.mu.Unlock()
 
-	return s.baseURL + "/playlist.m3u8?t=" + token
+	return s.baseURL + "/hls/" + url.PathEscape(ep.Title) + "/master.m3u8?t=" + token
 }
 
 func (s *streamServer) NewWatchSession(episodes []extractor.Episode) (watchURL string) {
-	epURLs := make([]string, len(episodes))
+	entries := make([]watchEntry, len(episodes))
 	for i, ep := range episodes {
-		epURLs[i] = s.NewSession(ep)
+		entries[i] = watchEntry{Title: ep.Title, URL: s.NewSession(ep)}
 	}
 
 	token := strconv.FormatInt(s.nextToken.Add(1), 10)
 
 	s.mu.Lock()
-	s.watchLists[token] = epURLs
+	s.watchLists[token] = entries
 	s.mu.Unlock()
 
 	return s.baseURL + "/watch.m3u8?t=" + token
 }
-
 func (s *streamServer) handleWatch(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("t")
 
 	s.mu.Lock()
-	epURLs, ok := s.watchLists[token]
+	entries, ok := s.watchLists[token]
 	s.mu.Unlock()
 
 	if !ok {
@@ -97,9 +101,9 @@ func (s *streamServer) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	var sb strings.Builder
 	sb.WriteString("#EXTM3U\n")
-	for _, u := range epURLs {
-		sb.WriteString(u)
-		sb.WriteString("\n")
+	for _, e := range entries {
+		title := strings.NewReplacer("\r", " ", "\n", " ").Replace(e.Title)
+		fmt.Fprintf(&sb, "#EXTINF:-1,%s\n%s\n", strings.TrimSpace(title), e.URL)
 	}
 
 	w.Header().Set("Content-Type", "audio/x-mpegurl")
@@ -125,6 +129,7 @@ func (s *streamServer) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Content-Disposition", ep.Title)
 	w.Write(rewritePlaylist(data, s.baseURL))
 }
 
