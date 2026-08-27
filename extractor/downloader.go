@@ -150,7 +150,6 @@ func (ad *adaptiveDownloader) downloadSegment(url string, w io.Writer) error {
 			continue
 		}
 
-		// Extract and write data
 		segments, err := extractDataAfterIEND(content)
 		if err != nil {
 			return fmt.Errorf("failed to extract segments: %w", err)
@@ -182,9 +181,8 @@ func (ad *adaptiveDownloader) fetchSegment(url string) ([]byte, bool, error) {
 	}
 	defer resp.Body.Close()
 
-	// Handle rate limiting
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, true, nil // Retry with backoff
+		return nil, true, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -200,7 +198,7 @@ func (ad *adaptiveDownloader) fetchSegment(url string) ([]byte, bool, error) {
 }
 
 func (ad *adaptiveDownloader) applyBackoff() {
-	// Multiplicative backoff with jitter
+
 	ad.delay = min(time.Duration(float64(ad.delay)*1.8), ad.maxDelay)
 	jitter := ad.delay/2 + time.Duration(rand.Float64()*float64(ad.delay/2))
 	time.Sleep(jitter)

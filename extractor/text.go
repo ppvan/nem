@@ -82,10 +82,9 @@ func mustJoinPath(base string, elem ...string) string {
 }
 
 func extractDataAfterIEND(raw []byte) ([]byte, error) {
-	// PNG signature
+
 	pngSignature := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 
-	// Verify PNG signature
 	if len(raw) < len(pngSignature) {
 		return nil, errors.New("not a valid PNG file (missing PNG signature)")
 	}
@@ -195,7 +194,6 @@ func parseAnimeVietsubAnimeDetails(movieId int, r io.Reader) (*AnimeDetail, erro
 		id1, err1 := strconv.ParseInt(e1.Id, 10, 64)
 		id2, err2 := strconv.ParseInt(e2.Id, 10, 64)
 
-		// If either ID is invalid, treat them as equal (incomparable).
 		if err1 != nil || err2 != nil {
 			return 0
 		}

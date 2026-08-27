@@ -44,8 +44,6 @@ var (
 	pseudoHeaderOrder = []string{":method", ":authority", ":scheme", ":path"}
 )
 
-// fetchMode is the Sec-Fetch-* / Accept quartet Chrome derives from the
-// request's initiator. Zero-value user means "not a user activation".
 type fetchMode struct {
 	accept, site, mode, dest, user string
 }
@@ -64,23 +62,14 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 
 	jar := tls_client.NewCookieJar()
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(),
-		tls_client.WithClientProfile(profiles.Chrome_133), // use newest profile your version has
+		tls_client.WithClientProfile(profiles.Chrome_133),
 		tls_client.WithCookieJar(jar),
 		tls_client.WithTimeoutSeconds(20),
-		tls_client.WithRandomTLSExtensionOrder(), // Chrome 106+ shuffles per connection
+		tls_client.WithRandomTLSExtensionOrder(),
 	)
 
 	if err != nil {
 		return nil, err
-	}
-
-	// Auto resolve domain if not provided
-	if domain == "" {
-		resp, err := http.Get("https://bit.ly/animevietsubtv")
-		if err != nil {
-			return nil, fmt.Errorf("can't auto resolve animevietsub domain: %w", err)
-		}
-		domain = resp.Request.URL.String()
 	}
 
 	ex := &AniVietSubExtractor{
@@ -88,7 +77,6 @@ func NewAniVietSubExtractor(domain string) (*AniVietSubExtractor, error) {
 		domain: domain,
 	}
 
-	// Fetch homepage to get Cloudflare cookies before any real request
 	if err := ex.warmUp(); err != nil {
 		return nil, fmt.Errorf("warmup failed: %w", err)
 	}
@@ -237,17 +225,6 @@ func (ex *AniVietSubExtractor) Download(e Episode, w io.Writer, callback func(pr
 	return downloader.downloadSegments(segmentURLs, w, callback)
 }
 
-// DownloadSegment downloads a single HLS segment and returns its decoded
-// bytes.
-//
-// Segments on this site are disguised as PNG files — the real .ts payload
-// is appended after the PNG's IEND chunk, presumably to dodge naive
-// content-type/extension filtering. extractDataAfterIEND (already defined
-// elsewhere in this package) strips that wrapper back off.
-//
-// Retries on HTTP 429 with exponential backoff + jitter, since segment
-// CDNs on this site rate-limit aggressively; any other non-200 status or
-// transport error fails immediately without retrying.
 func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 	const (
 		segmentMaxRetries     = 10
@@ -267,9 +244,7 @@ func (ex *AniVietSubExtractor) DownloadSegment(url string) ([]byte, error) {
 
 		resp, err := ex.client.Do(req)
 		if err != nil {
-			// resp is nil on a transport error, so there's nothing to
-			// close — and unlike a 429, this isn't something retrying is
-			// likely to fix, so fail immediately.
+
 			return nil, fmt.Errorf("fetch segment: %w", err)
 		}
 

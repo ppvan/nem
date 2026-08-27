@@ -26,7 +26,6 @@ var (
 	KEY_TAG            = regexp.MustCompile(`^#EXT-X-KEY`)
 )
 
-// Envelope represents the structural metadata used during decryption.
 type Envelope struct {
 	CN  string `json:"cn"`
 	SK  string `json:"sk"`
@@ -38,7 +37,7 @@ func extractEnvelope(rawHeaders http.Header) Envelope {
 
 	envelopeHeader := rawHeaders.Get("X-Envelope")
 	if envelopeHeader != "" {
-		// Mimics the try/catch behavior; if decoding fails, it falls through to legacy headers
+
 		if env, err := parseEnvelope(envelopeHeader); err == nil {
 			return env
 		}
@@ -50,7 +49,7 @@ func extractEnvelope(rawHeaders http.Header) Envelope {
 	}
 	uid, err := url.QueryUnescape(uidRaw)
 	if err != nil {
-		uid = uidRaw // Fallback to raw string if URI decoding fails
+		uid = uidRaw
 	}
 
 	ts := rawHeaders.Get("X-Request-Trace")

@@ -10,56 +10,44 @@ import (
 	"github.com/rodrigocfd/windigo/win"
 )
 
-// Overall two-column layout, modeled after Free Manga Downloader's
-// sidebar-catalog + main-workspace structure: a left sidebar for
-// browsing/searching the catalog, and a right workspace for the selected
-// title's details and episode list.
 const (
 	winWidth  = 970
 	winHeight = 570
 
 	sidebarX = 10
-	sidebarW = 230 // sidebar controls span x=10..240
+	sidebarW = 230
 
-	rightX       = 255 // 15px gutter after the sidebar
-	rightW       = 700 // 255..955, leaving a 15px right margin
+	rightX       = 255
+	rightW       = 700
 	scrollBarPad = 8
 )
 
-// MyWindow holds every control plus the small amount of UI-side state.
 type MyWindow struct {
 	wnd *ui.Main
 
-	// Left sidebar: catalog browsing
 	edtSidebarSearch *ui.Edit
 	btnSidebarSearch *ui.Button
 	lvResults        *ui.ListView
 	lblSidebarStatus *ui.Static
 
-	// Right workspace: info block
-	thumbnail   *ui.Control // custom-painted cover image
+	thumbnail   *ui.Control
 	lblTitle    *ui.Static
 	lblSubtitle *ui.Static
 	lblRating   *ui.Static
-	lblStats    *ui.Static // views + total episodes
+	lblStats    *ui.Static
 	edtDesc     *ui.Edit
 
-	// Right workspace: episodes — double-click a row to play from there to
-	// the end of the series. No checkboxes/selection: playback is the only
-	// action, so there's nothing to select for.
 	lblEpisodes *ui.Static
-	btnOpenMPV  *ui.Button // plays the whole series, starting from episode 1
+	btnOpenMPV  *ui.Button
 	lvEpisodes  *ui.ListView
 
-	// Right workspace: remaining actions
 	lblStatus *ui.Static
 
-	// State
 	ext             *extractor.AniVietSubExtractor
 	stream          *streamServer
-	thumbnailPixels []byte                 // decoded top-down 32bpp BGR pixels (nil = show placeholder); see thumbnail.go
-	thumbnailSize   win.SIZE               // pixel dimensions matching thumbnailPixels
-	currentInfo     *extractor.AnimeDetail // last loaded anime info; nil until first successful load
+	thumbnailPixels []byte
+	thumbnailSize   win.SIZE
+	currentInfo     *extractor.AnimeDetail
 }
 
 func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) int {
@@ -69,22 +57,8 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 			Center(true).
 			ClassIconId(42).
 			Size(ui.Dpi(winWidth, winHeight)),
-		// No ClassIconId() here: that requires an icon resource compiled
-		// into the .exe (via a .syso resource file, like windigo's own
-		// examples ship). Without one, loading it panics with "the
-		// specified image file did not contain a resource section".
-		// Add a .syso + ClassIconId(...) later if you want a custom icon.
 	)
 
-	// --- Left sidebar: catalog browsing -----------------------------------
-
-	// Reserve room for the vertical scrollbar in the column width: a
-	// LVS_REPORT ListView's horizontal scroll extent is driven by the sum
-	// of its column widths, which is computed against the control's full
-	// width, not its content width net of the vertical scrollbar. Size the
-	// single column right up to that scrollbar and no further, or a
-	// horizontal scrollbar appears the moment enough rows trigger a
-	// vertical one — even though there's no actual horizontal overflow.
 	vScrollW := int(win.GetSystemMetrics(co.SM_CXVSCROLL))
 
 	edtSidebarSearch := ui.NewEdit(wnd, ui.OptsEdit().
@@ -109,8 +83,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		Position(ui.Dpi(sidebarX, 540)).
 		Size(ui.Dpi(sidebarW, 20)),
 	)
-
-	// --- Right workspace: info block ---------------------------------------
 
 	thumbnail := ui.NewControl(wnd, ui.OptsControl().
 		Position(ui.Dpi(rightX, 12)).
@@ -147,8 +119,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		CtrlStyle(co.ES_MULTILINE|co.ES_LEFT|co.ES_AUTOVSCROLL|co.ES_READONLY),
 	)
 
-	// --- Right workspace: episodes ------------------------------------------
-
 	lblEpisodes := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("Episodes (double-click to play from there):").
 		Position(ui.Dpi(rightX, 222)).
@@ -169,8 +139,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		Column("#", epNumColW).
 		Column("Title", ui.DpiX(rightW)-epNumColW-vScrollW-scrollBarPad),
 	)
-
-	// --- Right workspace: remaining actions ---------------------------------
 
 	lblStatus := ui.NewStatic(wnd, ui.OptsStatic().
 		Text("").
@@ -202,9 +170,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 		lblStatus: lblStatus,
 	}
 
-	// All child controls get their real HWNDs during WM_CREATE, in the
-	// order they were registered above. Kick off an initial Trending()
-	// load for the sidebar only once that has happened.
 	wnd.On().WmCreate(func(_ ui.WmCreate) int {
 		me.loadResultsList("Trending", me.ext.Trending)
 		return 0
@@ -214,10 +179,6 @@ func ShowMainWindow(ext *extractor.AniVietSubExtractor, stream *streamServer) in
 	return wnd.RunAsMain()
 }
 
-// setEpisodes replaces lvEpisodes' rows with one per episode. A ListView's
-// rows can be added/removed at any time (unlike Windigo's fixed, built-at-
-// WM_CREATE controls), so setEpisodes just clears and repopulates it per
-// anime — no cap on episode count.
 func (me *MyWindow) setEpisodes(episodes []extractor.Episode) {
 	me.lvEpisodes.DeleteAllItems()
 	for i, ep := range episodes {
@@ -225,9 +186,6 @@ func (me *MyWindow) setEpisodes(episodes []extractor.Episode) {
 	}
 }
 
-// setStatic sets a Static control's text without triggering an
-// auto-resize (unlike Static.SetTextAndResize), so fixed-position labels
-// keep their layout box.
 func setStatic(s *ui.Static, text string) {
 	s.Hwnd().SetWindowText(text)
 }

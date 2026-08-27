@@ -11,32 +11,30 @@ import (
 
 const appTitle = "Kyoa"
 
-// TODO: make this configurable (a settings field, env var, flag, etc.)
-// instead of hardcoding a single site.
-const animeDomain = "https://animevietsub.work"
-
 func main() {
-	runtime.LockOSThread() // Windows GUI must run on the OS thread
+	runtime.LockOSThread()
 
-	// COM is needed for WIC thumbnail decoding (see thumbnail.go).
 	_, _ = win.CoInitializeEx(co.COINIT_APARTMENTTHREADED | co.COINIT_DISABLE_OLE1DDE)
 	defer win.CoUninitialize()
 
-	// Built once and reused for the whole app session (rather than per
-	// search) so we don't pay for TLS client setup / warmUp() on every
-	// click.
-	ext, err := extractor.NewAniVietSubExtractor(animeDomain)
-	if err != nil {
-		// A windowsgui build has no console attached, so surface startup
-		// failures with a message box instead of printing to stderr.
+	var (
+		ext *extractor.AniVietSubExtractor
+		err error
+	)
+	for _, domain := range animeDomainCandidates() {
+		if ext, err = extractor.NewAniVietSubExtractor(domain); err == nil {
+			break
+		}
+	}
+
+	if ext == nil {
+
 		win.HWND(0).MessageBox(
 			"Failed to initialize extractor:\n"+err.Error(),
 			appTitle, co.MB_ICONERROR)
 		return
 	}
 
-	// Local loopback proxy that lets an external mpv process play an
-	// episode through ext's own fetch/decrypt logic — see stream.go.
 	stream := newStreamServer(ext)
 	if _, err := stream.Start(); err != nil {
 		win.HWND(0).MessageBox(
